@@ -1,12 +1,41 @@
-# The driver
+# Write the driver
 
 The driver is a hegel concurrent state machine run from `#[hegel::main]`. Each `#[rule]` is one action: it draws its inputs, sends a request, and records the outcome in the model. Hegel runs the rules on several worker threads, in rounds. The next round starts only when every worker is done, so one slow rule stalls them all.
 
-## Example
+Dependencies: `hegeltest` with `features = ["static-engine"]`, and `antithesis_sdk`.
 
-This drives a replicated key-value store with no client library, with `PUT /k/<key>` and `GET /k/<key>` on any node, that promises linearizable reads.
+## Starting up
 
-Depend on `hegeltest` with `features = ["static-engine"]`, and on `antithesis_sdk`. Left out below: the HTTP client (`put`, `get`), reading the node list from `KV_URLS`, `draw_target` (a node and one of `KEYS` keys), and `KeyHistory`'s `sent`, `acked` and `overlaps` (a write was in flight during the read). `acked` finds its write by value, since pruning may have moved it.
+`main` does this, in order:
+
+1. **Call `antithesis_init()`** first, so assertions and lifecycle calls work.
+2. **Bind the UDP ports and start the background threads:** the log receiver on 7777 (`references/workload/system-logs.md`) and, with client containers, the completion-event receiver on 7778. Binding first means the driver hears the system's logs from boot on. Node states learned during setup are in the root snapshot, so every timeline starts with them; the log assertions wait for step 6.
+3. **Wait until the system is ready.** Retry; never sleep a fixed time. Check every node the workload sends to, and repeat until all pass.
+
+   Ready means each node serves the requests the workload sends: a read answers, the cluster has a leader, all members joined. An open port isn't enough.
+
+   With client containers, also wait for every client program's health request. A client that can't start then fails setup loudly, so the workload never runs with clients it can't drive.
+
+   On each pass, print which nodes aren't ready yet, so a run that times out in setup shows in its logs what it waited for. Give the wait no overall deadline: `--setup-timeout` bounds it in Antithesis, and `snouty validate --timeout` bounds it locally.
+4. **Run admin setup, if any.** Operations that must happen before the workload starts (create the cluster, a schema, users, buckets, topics) can run here when that's easier than in the system's containers. They use a direct connection to the servers (`references/workload/clients.md`). Retry each until it succeeds, and treat "already exists" as success, since a retried request may have taken effect. Keep it fast: it counts toward setup time.
+5. **Report setup complete** with `antithesis_sdk::lifecycle::setup_complete(&details)`. Nothing else reports setup complete. Antithesis takes the root snapshot some time after it.
+6. **Wait for `/workload-active`.** Poll for the file every 100 ms. This wait is outside the state machine, so a sleep loop is fine. The driver container's `first_` command creates the file (`references/workload/harness.md`). Then set the flag that turns on the log assertions ("Parse the lines" in `references/workload/system-logs.md`).
+7. **Mark the start** with `assert_reachable!("the workload starts", ...)`, so a run and the local loop both show that the first command ran and the driver got past the wait.
+8. **Run the state machine** forever.
+
+Nothing before step 8 draws from hegel. Every timeline branches from a snapshot taken while the driver waits in step 6, so all randomness comes after the timeline starts.
+
+The `main` at the end of the example below does all of this.
+
+### Shared volumes for out-of-band facts
+
+When the driver can't tell over the network that a node is ready, or needs something a node generates (credentials, certificates, a node ID, a "migration done" marker), share a named volume between that node's container and the driver, and have the node write a file there. Use it only for setup and out-of-band facts, never to observe what the workload tests. A file on a volume isn't subject to network faults, and it survives container restarts, so a marker can be stale after a restart. The Compose wiring is in `references/workload/harness.md`.
+
+## Example: a replicated key-value store
+
+This drives a replicated key-value store with no client library. It serves `PUT /k/<key>` and `GET /k/<key>` on any node, and promises linearizable reads.
+
+Left out below: the HTTP client (`put`, `get`), reading the node list from `KV_URLS`, `draw_target` (a node and one of `KEYS` keys), `wait_until_ready`, `wait_for_nodes` ("Quiet periods"), and `KeyHistory`'s `sent`, `acked` and `overlaps` (a write was in flight during the read). `acked` finds its write by value, since pruning may have moved it. `wait_until_ready` loops over `self.nodes` and the client programs until each answers within `TIMEOUT`, printing the ones that don't, and pauses about 1 s between passes.
 
 ```rust
 /// Short, so a request to an unreachable node costs a moment, not a stalled round.
@@ -14,6 +43,8 @@ const TIMEOUT: Duration = Duration::from_millis(1000);
 /// How long a write with an unknown outcome stays possible. Systems apply such writes
 /// soon or never, and keeping them forever would let the check accept almost anything.
 const AMBIGUITY_WINDOW: Duration = Duration::from_secs(60);
+/// Created by the driver container's `first_` command (harness.md).
+const WORKLOAD_ACTIVE: &str = "/workload-active";
 
 /// One write to a key. `acked` is when the system acknowledged it, or `None` if we never
 /// learned the outcome, in which case it may still take effect.
@@ -76,7 +107,7 @@ impl Driver {
     fn get_value(&self, tc: TestCase) {
         let (node, key) = self.draw_target(&tc);
         let start = Instant::now();
-        // `get` turns a 404 into `None`, and an unparsable body into a value no write produced.
+        // `get` turns a 404 into `None`, and an unparseable body into a value no write produced.
         let Ok(got) = self.get(node, key) else { return }; // a failed read tells us nothing
         let end = Instant::now();
         let history = self.keys[key].lock().unwrap();
@@ -89,6 +120,20 @@ impl Driver {
 fn main(tc: TestCase) {
     antithesis_init();
     let driver = Driver { /* ... */ };
+    let active = Arc::new(AtomicBool::new(false));
+    // Start the log receiver here, before waiting, with a clone of `active` (references/workload/system-logs.md).
+
+    // Step 3: wait until every node serves.
+    driver.wait_until_ready();
+    // driver.admin_setup(); // optional: schema, users, ... (retried, idempotent)
+    antithesis_sdk::lifecycle::setup_complete(&json!({"nodes": driver.nodes}));
+
+    while !std::path::Path::new(WORKLOAD_ACTIVE).exists() {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    active.store(true, Ordering::Relaxed);
+    assert_reachable!("the workload starts", &json!({}));
+
     hegel::stateful::machine(driver)
         .steps(i64::MAX)
         .max_concurrency(4)
@@ -98,7 +143,7 @@ fn main(tc: TestCase) {
 
 ## Rules
 
-- **Run forever.** Call `.steps(i64::MAX)`; the default stops after 50 rounds and the binary exits. Don't use `tc.repeat`.
+- **Run forever.** Call `.steps(i64::MAX)`. The default stops after 50 rounds, and the binary exits. Don't use `tc.repeat`.
 - **Use Antithesis SDK assertions, never panics.** Put the values you'd need to debug in the details.
 - **Generate only.** Keep `phases = [hegel::Phase::Generate]` on `#[hegel::main]`.
 - **Cover the surface you mapped.** Draw options; don't hard-code the common case.
@@ -107,59 +152,56 @@ fn main(tc: TestCase) {
 
 ## Driving client containers
 
-With client containers (`references/workload/clients.md`), the rules above still hold, with the driver sending commands to a client program instead of requests to the servers. A few things change:
+With client containers (`references/workload/clients.md`), the rules above still hold. The driver sends commands to a client program, and these also apply:
 
 - **Each rule draws which client acts.** Bugs between clients need several of them acting on the same keys, locks or transactions.
-- **Outcomes arrive as events.** Tag each operation with an ID and wait for the response only up to the usual short timeout. A background thread receives the client programs' completion events on their own UDP port, separate from the logs, and resolves each operation in the model as its event arrives, the way `references/workload/system-logs.md` handles log lines as they arrive. An operation without an event stays unknown until its client's boot changes or the ambiguity window passes. A dropped event leaves its operation unknown, which is safe.
-- **Bursts are cheap.** Since outcomes arrive as events, a rule can send several operations to one client without waiting for their responses. That gets the library batching beyond what the worker count allows.
-- **A changed boot identifier means the client restarted.** Everything outstanding on its old boot gets an unknown outcome, and the model forgets that client's sessions, locks and open transactions. Unknown includes what the client believed: a client that was paused, not restarted, may still think it holds a lock that has since expired.
+- **Outcomes arrive as events.** Tag each operation with an ID, and wait for the response only up to the usual short timeout. A background thread receives the client programs' completion events on UDP port 7778, separate from the logs. It resolves each operation in the model as its event arrives, the way `references/workload/system-logs.md` handles log lines. An operation without an event stays unknown until its client's boot changes or the ambiguity window passes. A dropped event leaves its operation unknown, which is safe.
+- **Bursts are cheap.** A rule can send several operations to one client without waiting for their responses. That gets the library batching beyond what the worker count allows.
+- **A changed boot identifier means the client restarted.** Everything outstanding on its old boot gets an unknown outcome, and the model forgets that client's sessions, locks and open transactions. Unknown includes what the client believed: a client that was paused, not restarted, may still think it holds a lock that has since expired. Put a reachable assertion where the driver notices a new boot.
 - **An unreachable client is normal.** It may be paused or mid-restart. Treat commands to it as unknown, and keep driving the other clients.
-- **Read-only checks may go to the servers directly**, as described in `references/workload/clients.md`. Actions never do.
+- **Read-only checks may go to the servers directly** (`references/workload/clients.md`). Actions never do.
 
-**Keep rules relatively fast:**
+## Keep rules fast
 
 - Use short timeouts. Give operations that are slow by design their own.
-- Don't sleep or poll. Record what you expect, and check it in a later rule. The one exception is a quiet period (below), which waits for recovery on purpose.
+- Don't sleep or poll in a rule. Record what you expect, and check it in a later rule. The one exception is a quiet period, which waits for recovery on purpose.
 - Keep long-lived interactions (streams, sessions, transactions) in the driver's state, across rules.
-- Run blocking operations (watches, long-polls, blocking pops) on a background thread, record the result in the driver's state, and check it in a later rule. Bounded retries that mirror a real client's are fine inside a rule.
+- Run blocking operations (watches, long-polls, blocking pops) on a background thread. Record the result in the driver's state, and check it in a later rule. Bounded retries that mirror a real client's are fine inside a rule.
 
-**Weight actions toward what's hard to reach**, so options and rare interactions happen many times in every timeline.
+**Weight actions toward what's hard to reach,** so options and rare interactions happen many times in every timeline.
 
-**Use `#[invariant(always_run)]`, not plain `#[invariant]`.** With `.steps(i64::MAX)`, a plain invariant effectively never runs. An `always_run` invariant runs after every round, while no rules run, and every round waits for it.
+**Use `#[invariant(always_run)]`.** With `.steps(i64::MAX)`, a plain `#[invariant]` effectively never runs. An `always_run` invariant runs after every round, while no rules run, and every round waits for it.
 
 ## Guiding exploration
 
-The assertions the workload writes aren't properties. A property says what the system must do, and its failure is a bug; properties come from the properties module. The workload's assertions mark states worth reaching. Their failure means the workload never reached that state.
+The workload's own assertions mark states worth reaching. Their failure means the workload never reached that state. Properties are separate: a property says what the system must do, its failure is a bug, and it comes from the properties module (`references/properties/MODULE.md`).
 
-They matter for two reasons:
+The workload's assertions do two things:
 
 - **They show what the workload reaches.** Coverage shows which code ran. These show which situations happened: a read overlapping a write to the same key, a leader change while a follower lags.
 - **Antithesis explores from them.** They mark interesting states for Antithesis.
 
 The assertions:
 
-- **`assert_sometimes!`**: a situation that should happen at least once per run. Examples:
-  - A leader election is triggered
-  - A transaction aborts
-  - A rate limiter rejects a request
-  - A search returns no results
-  - A cache entry expires and is refilled
-  - A read returns a value written by another client
-  - A compaction runs while reads are in flight
-  - Two clients edit the same document at the same time
-
-  If both a situation and its opposite are possible (a game is sometimes won and sometimes lost), add one for each.
-
+- **`assert_sometimes!`**: a situation that should happen at least once per run. If both a situation and its opposite are possible (a game is sometimes won and sometimes lost), add one for each. Examples:
+  - a leader election is triggered
+  - a transaction aborts
+  - a rate limiter rejects a request
+  - a search returns no results
+  - a cache entry expires and is refilled
+  - a read returns a value written by another client
+  - a compaction runs while reads are in flight
+  - two clients edit the same document at the same time
 - **`assert_reachable!`**: code that should run at least once. The same as `assert_sometimes!(true, ...)`.
 - **Numeric and boolean forms** (`assert_sometimes_greater_than!`, `assert_sometimes_all!`, and so on): a situation that's a comparison or a combination, like a follower falling more than 10 entries behind. They tell Antithesis how close each moment came, which guides its search better than true or false.
 
-Where to put them:
+Put them:
 
 - **On the rare outcome of every action** in the surface you mapped, and on both sides of every option.
-- **On situations that need faults**, so a run shows whether faults reached them.
-- **On combinations no single request shows**, from the model or the nodes' state in the logs (`references/workload/system-logs.md`).
+- **On situations that need faults,** so a run shows whether faults reached them.
+- **On combinations no single request shows,** from the model or from the nodes' state in the logs (`references/workload/system-logs.md`).
 
-Each message is one assertion in Antithesis, and assertions that share a message merge into it. Keep messages fixed and put changing values in the details.
+Each message is one assertion in Antithesis, and assertions that share a message merge into it. Keep messages fixed, and put changing values in the details.
 
 ## Choosing how often things happen
 
@@ -167,11 +209,13 @@ Each message is one assertion in Antithesis, and assertions that share a message
 - **Weights are a hint** for the mix within a group, not a guarantee.
 - **Explicit draws set exact probabilities.** Use `tc.draw(gs::weighted_booleans(p))`, or a phase in the driver's state, when a rate matters.
 
-Put a rare action in the main group behind a rare draw, not in its own group, which would get as many rounds as any other. If it must not overlap other operations, run it from the `always_run` invariant behind a rare draw, as the quiet period does.
+Put a rare action in the main group behind a rare draw. A group of its own would get as many rounds as any other. If it must not overlap other operations, run it from an `always_run` invariant behind a rare draw, as the quiet period does.
 
 ## Quiet periods
 
-A quiet period pauses faults so the system can recover. Properties that hold only once faults stop, like every node serving again or acknowledged writes being readable, are checked there. Run the whole quiet period inside one call of an `#[invariant(always_run)]`. No rule runs until it returns, so the checks see a quiet system, and it can wait for recovery there. A per-round `weighted_booleans` draw starts quiet periods at a rate you choose. Pause faults with `ANTITHESIS_STOP_FAULTS <seconds>` for longer than the whole check takes; faults resume on their own afterwards. For the example above:
+A quiet period pauses faults so the system can recover. Properties that hold only once faults stop, like every node serving again or acknowledged writes being readable, are checked there.
+
+Run the whole quiet period inside one call of an `#[invariant(always_run)]`. No rule runs until it returns, so the checks see a quiet system, and it can wait for recovery. A per-round `weighted_booleans` draw starts quiet periods at a rate you choose. Pause faults with `ANTITHESIS_STOP_FAULTS <seconds>` for longer than the whole check takes; faults resume on their own afterwards. For the example above:
 
 ```rust
 /// Chance per round of starting a quiet period. Measure rounds per second locally,
@@ -195,6 +239,8 @@ fn quiet_period(&self, tc: TestCase) {
 }
 ```
 
-Clock faults continue during a pause, so allow for clock jumps. To test a quiet period locally, set the probability to 1.
+`wait_for_nodes` and `wait_until_ready` can share one per-node check; the quiet period stops at `DEADLINE`.
 
-For the rest of hegel's API, see the hegel documentation at <https://hegel.dev/> (rust at <https://docs.rs/hegeltest/latest/hegel/>).
+Clock faults continue during a pause, so allow for clock jumps. To test a quiet period locally, set its probability to 1.
+
+For the rest of hegel's API, see https://hegel.dev/ (Rust: https://docs.rs/hegeltest/latest/hegel/).

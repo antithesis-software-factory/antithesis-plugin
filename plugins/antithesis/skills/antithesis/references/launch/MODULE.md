@@ -17,7 +17,7 @@ First read `snouty validate --help` and `snouty launch --help`. They document th
 
 ### Setup timeout
 
-Before Antithesis can begin fuzzing, it needs to first setup the system and get the SUT to setup complete. The faster the system gets to setup complete the better. With this in mind, `snouty launch` takes a `--setup-timeout` parameter which defaults to 5 minutes. Only adjust this parameter higher if your system genuinely can not reach setup complete in time.
+Before Antithesis can begin fuzzing, it needs to first set up the system and get the SUT to setup complete. The faster the system gets to setup complete the better. With this in mind, `snouty launch` takes a `--setup-timeout` parameter which defaults to 5 minutes. Only adjust this parameter higher if your system genuinely can not reach setup complete in time.
 
 ### Compute hours & performance tier
 

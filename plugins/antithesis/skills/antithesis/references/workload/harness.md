@@ -1,8 +1,10 @@
-# Wiring the driver into Antithesis
+# Wire up the harness
 
-## The driver container
+Every service in `docker-compose.yaml` needs an explicit `image:`. snouty rejects services without one.
 
-Build the driver into its own image and add it to `docker-compose.yaml` as a service named `driver`. The driver is the container's main process, and the container waits for the snapshot gate (below):
+## 1. The driver container
+
+Build the driver into its own image, and add it to `docker-compose.yaml` as a service named `driver`. The driver binary is the container's main process (`references/workload/driver.md`).
 
 ```yaml
   driver:
@@ -15,10 +17,9 @@ Build the driver into its own image and add it to `docker-compose.yaml` as a ser
     image: driver:latest
     environment:
       KV_URLS: http://kv1:8000,http://kv2:8000
-    depends_on:
-      snapshot-gate:
-        condition: service_completed_successfully
 ```
+
+`driver/Dockerfile`:
 
 ```dockerfile
 FROM rust:1-bookworm AS build
@@ -28,55 +29,26 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 COPY --from=build /src/target/release/driver /usr/local/bin/
+COPY --chmod=755 driver/first_start_workload /opt/antithesis/test/v1/main/
 CMD ["/usr/local/bin/driver"]
 ```
 
-## The snapshot gate
+## 2. The test template
 
-Every timeline starts from the root snapshot, which Antithesis takes some time after the system reports `setup_complete` (below). The driver must start after the snapshot, so that each timeline runs its own. A snapshot-gate container holds it back:
+The driver image's test template, `/opt/antithesis/test/v1/main/`, holds exactly one test command, `first_start_workload`. No other container has a test template. The directory name `main` is the test name; any name works.
 
-1. The gate waits for `/first_open_gate_done`.
-2. The system reports `setup_complete`, and Antithesis takes the root snapshot.
-3. At the start of each timeline, Antithesis runs the gate's `first_open_gate` test command, which creates `/first_open_gate_done`.
-4. The gate exits, and Compose starts the driver.
+`driver/first_start_workload`, executable:
 
-The system's containers boot before the snapshot, so every timeline starts with the system already up.
-
-```yaml
-  snapshot-gate:
-    container_name: snapshot-gate
-    hostname: snapshot-gate
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: snapshot-gate/Dockerfile
-    image: snapshot-gate:latest
+```sh
+#!/bin/sh
+touch /workload-active
 ```
 
-```dockerfile
-FROM debian:bookworm-slim
-COPY snapshot-gate/wait-for-snapshot /usr/local/bin/
-COPY snapshot-gate/first_open_gate /opt/antithesis/test/v1/main/first_open_gate
-CMD ["wait-for-snapshot"]
-```
+Antithesis runs the first command once at the start of every timeline, after setup complete and the root snapshot, in the container that holds it. The file appears on the driver's filesystem exactly when fuzzing starts, and every timeline starts from the snapshot, where the file doesn't exist yet.
 
-`snapshot-gate/wait-for-snapshot`:
+Test commands must be executable. `snouty validate` starts the deployment and waits for the driver's setup complete. It then finds the test commands under `/opt/antithesis/test/v1` in the running containers, and reports any that aren't executable. It runs none of them.
 
-```bash
-#!/usr/bin/env bash
-while [[ ! -e /first_open_gate_done ]]; do sleep 1; done
-```
-
-`snapshot-gate/first_open_gate`:
-
-```bash
-#!/usr/bin/env bash
-touch /first_open_gate_done
-```
-
-Make both executable.
-
-## Client containers
+## 3. Client containers
 
 Add one service per client container (`references/workload/clients.md`), built from the client program:
 
@@ -88,6 +60,7 @@ Add one service per client container (`references/workload/clients.md`), built f
     build:
       context: .
       dockerfile: client/Dockerfile
+    image: client:latest
     restart: on-failure
     environment:
       KV_URLS: http://kv1:8000,http://kv2:8000
@@ -95,21 +68,24 @@ Add one service per client container (`references/workload/clients.md`), built f
       OUTCOME_ADDR: driver:7778
 ```
 
-Point the driver at them instead of the servers, for example with `CLIENT_URLS: http://client1:8080,http://client2:8080`. `OUTCOME_ADDR` is where the client program sends its completion events.
+`OUTCOME_ADDR` is where the client program sends its completion events. Point the driver at the clients, for example with `CLIENT_URLS: http://client1:8080,http://client2:8080` on the driver. The driver keeps `KV_URLS` for readiness, admin setup and quiet-period reads.
 
-The driver may start before the client programs are reachable, and clients restart throughout a run anyway. Treat an unreachable client as a normal state the driver handles, not a setup failure, and leave the clients out of `setup_complete`.
+## 4. Shared volumes
 
-## Setup complete
+For out-of-band facts ("Shared volumes for out-of-band facts" in `references/workload/driver.md`), mount one named volume in the node that writes and in the driver:
 
-Report `setup_complete` from the system's side, once every node serves, from a check that retries rather than after a fixed sleep. With an Antithesis SDK, call its `setup_complete` function. Without one, append this line to `$ANTITHESIS_OUTPUT_DIR/sdk.jsonl`:
-
-```json
-{"antithesis_setup": {"status": "complete"}}
+```yaml
+  kv1:
+    volumes: [shared:/shared]
+  driver:
+    volumes: [shared:/shared]
+volumes:
+  shared:
 ```
 
-## Exclude the driver container from faults
+## 5. Exclude the driver from faults
 
-Exclude the driver container from faults with these `advanced_test` parameters. Launch every run of the workload with the `advanced_test` launcher and these parameters, following `references/launch/MODULE.md`:
+Launch every run of the workload with the `advanced_test` launcher, following `references/launch/MODULE.md`, and these parameters, which exclude the driver container from faults:
 
 ```bash
 --param 'custom.network_fault_exclusion_patterns=^driver$'
@@ -117,8 +93,6 @@ Exclude the driver container from faults with these `advanced_test` parameters. 
 --param custom.container_cpu_fault_exclusions=driver
 ```
 
-The container and CPU exclusions take exact container names. To exclude several containers from network faults, use `^a$|^b$`. Don't use parentheses (due to a bug).
+The container and CPU exclusions take exact container names. The network exclusion is a regex: to exclude several containers, use `^a$|^b$`. Don't use parentheses; a bug breaks them.
 
-Exclude only the driver container. Client containers get faulted like the servers: their failures are what they're there for.
-
-The snapshot gate doesn't need excluding.
+Exclude only the driver container. Client containers get faulted like the servers, since their failures are what they're there for.

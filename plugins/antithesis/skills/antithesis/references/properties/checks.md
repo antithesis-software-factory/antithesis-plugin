@@ -43,7 +43,7 @@ assert_always!(
 
 ## Node state, from the logs
 
-Check as each line arrives, in `NodeStates::record` (`references/workload/system-logs.md`). Lines from different nodes arrive in any order, so check over everything seen, or over one node's lines in `seq` order, never over the latest state of several nodes. Add a `leaders: HashMap<u64, String>` field, the first leader seen in each term, then add the two checks to `record`, the second inside its existing out-of-order check:
+Check as each line arrives, in `NodeStates::record` (`references/workload/system-logs.md`). Lines from different nodes arrive in any order, so check over everything seen, or over one node's lines in `seq` order, never over the latest state of several nodes. Add a `leaders: HashMap<u64, String>` field, the first leader seen in each term, and initialize it to `HashMap::new()` in `NodeStates::new`. Put the leader check at the top of `record`, and the commit check inside its out-of-order check. Both run before the `active` guard, so they check boot too:
 
 ```rust
 if s.role == "leader" {
