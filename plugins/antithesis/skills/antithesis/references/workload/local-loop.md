@@ -2,7 +2,7 @@
 
 ## 1. Build the system for coverage
 
-Antithesis instrumentation records nothing outside Antithesis, so measure local coverage with the language's own tool. Add a `docker-compose.coverage.yaml` that overrides each system service with a coverage Dockerfile and a shared `coverage` volume, one directory per service. Client containers count as system services: the client library is code under test.
+Antithesis instrumentation records nothing locally, so measure local coverage with the language's own tool. Add a `docker-compose.coverage.yaml` that overrides each system service with a coverage Dockerfile and a shared `coverage` volume, one directory per service. Client containers count as system services: the client library is code under test.
 
 **Rust**
 
@@ -29,9 +29,9 @@ In `docker-compose.coverage.yaml`, also set `ANTITHESIS_SDK_LOCAL_OUTPUT` on the
       ANTITHESIS_SDK_LOCAL_OUTPUT: /tmp/sdk.jsonl
 ```
 
-The driver's SDK then writes everything it reports to that file: its assertions, and its setup-complete event, `{"antithesis_setup": {"status": "complete", ...}}`.
+The driver's SDK then writes its assertions and its setup-complete event, `{"antithesis_setup": {"status": "complete", ...}}`, to that file.
 
-Nothing runs test commands locally, so start the workload by running the driver's first command yourself, right after `up`. That also checks the command. Running it before setup complete is fine: the driver finds the file as soon as it starts waiting.
+Nothing runs test commands locally, so run the driver's first command yourself right after `up`, which also checks it. Running it before setup complete is fine.
 
 Start the coverage build from scratch, let the workload run for a few minutes, then stop the system:
 

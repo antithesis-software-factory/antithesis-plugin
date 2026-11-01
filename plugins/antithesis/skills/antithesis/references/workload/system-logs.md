@@ -1,14 +1,12 @@
 # Forward the system's logs
 
-The system's logs show what each node believes: who is leader, which term it's in, how far it has applied. A forwarder in each system container sends them to the driver, where a background thread parses them into each node's state. Properties check that state as each line arrives, and the workload marks states across nodes worth exploring from.
-
-Client containers (`references/workload/clients.md`) are part of the system. Forward their logs the same way.
+The system's logs show what each node believes: who is leader, which term it's in, how far it has applied. A forwarder in each system container sends them to the driver, where a background thread parses them into each node's state. Forward client containers' logs (`references/workload/clients.md`) the same way.
 
 ## 1. Find the log lines
 
-Find the log lines that show each node's state, at any level: what the properties need, and the situations worth reaching. Turn on the level you need through the system's own configuration in `docker-compose.yaml`.
+Find the log lines, at any level, that show each node's state: what the properties need, and the situations worth reaching. Turn on that level through the system's own configuration in `docker-compose.yaml`.
 
-Prefer lines that state current values over lines that announce a change. The driver listens from its own start, but some lines still go missing: those a node sends before the driver's port is bound, and any the forwarder drops. A line that states the current value repairs the state on its next appearance. A missed change announcement is lost for good.
+Prefer lines that state current values over lines that announce a change. Some lines go missing (sent before the driver's port is bound, or dropped by the forwarder): a current-value line repairs the state on its next appearance, but a missed change announcement is lost for good.
 
 ## 2. Forward the logs
 
@@ -29,7 +27,7 @@ exec "$@" 2> >(exec log-forward >&2)
 
 If the system logs to stdout, use `exec "$@" > >(exec log-forward)`.
 
-In each system service's Antithesis Dockerfile, build the forwarder statically, so it runs on any base image, and put the wrapper in front of the system's command:
+In each system service's Antithesis Dockerfile, build the forwarder statically, so it runs on any base image, and put the wrapper, which needs bash, in front of the system's command:
 
 ```dockerfile
 FROM rust:1-bookworm AS log-forward
@@ -43,15 +41,11 @@ COPY driver/forward-logs /usr/local/bin/
 ENTRYPOINT ["forward-logs", "kv-server"]
 ```
 
-- Setting `ENTRYPOINT` drops a `CMD` inherited from the base image. Restate it if there is one.
-- The wrapper needs bash.
-- `exec` keeps the system's process as the container's main process (`references/workload/surface.md`).
-
-Set `LOG_FORWARD_ADDR=driver:7777` on each system service.
+Setting `ENTRYPOINT` drops a `CMD` inherited from the base image; restate it if there is one. Set `LOG_FORWARD_ADDR=driver:7777` on each system service.
 
 ## 3. Parse the lines
 
-In `main`, bind a UDP socket on port 7777 and start the receiving thread first, before the readiness wait ("Starting up" in `references/workload/driver.md`). Build the node states with `NodeStates::new`, passing a clone of `main`'s `active` flag, and keep them behind an `Arc<Mutex<…>>` shared with the state machine.
+The receiving thread listens on UDP port 7777 and starts first in `main` ("Starting up" in `references/workload/driver.md`). Build the node states with `NodeStates::new`, passing a clone of `main`'s `active` flag, and keep them behind an `Arc<Mutex<…>>` shared with the state machine.
 
 For the key-value store in `references/workload/driver.md`, if its nodes log `msg=raft-state term=3 role=leader commit=42`:
 
@@ -94,12 +88,12 @@ impl NodeStates {
 }
 ```
 
-Node states are recorded from boot, but the assertions wait for `/workload-active`. Otherwise the first election meets them in every run.
+The assertions wait for `active`, or the first election would meet them in every run.
 
 ## 4. Rules
 
 - **Handle lines as they arrive,** in the receiving thread, not in rules. A rule runs late and misses short-lived states.
 - **Share state both ways.** Rules read the node states, for example to send reads to a lagging follower. Give the receiving thread the model too (behind an `Arc`), so properties that combine the logs with the model are checked when the line arrives. Never hold a model lock and the node-state lock at once: copy what you need from one, release it, then take the other.
-- **Don't depend on arrival order across nodes.** Lines from different nodes arrive in any order. Keep each node's lines in `seq` order. The latest state of several nodes is a mix of times: use it only for sometimes assertions.
-- **Mark states worth exploring from** with sometimes assertions ("Guiding exploration" in `references/workload/driver.md`), especially combinations across nodes: a leader change while a follower lags, a node rejoining with a stale term, nodes disagreeing on membership. Use the numeric forms when there's a distance to the state.
+- **Don't depend on arrival order across nodes.** Keep each node's lines in `seq` order. The latest state of several nodes is a mix of times: use it only for sometimes assertions.
+- **Mark states worth exploring from** with sometimes assertions ("Guiding exploration" in `references/workload/driver.md`), especially combinations across nodes: a leader change while a follower lags, a node rejoining with a stale term. Use the numeric forms when there's a distance to the state.
 - **Assert that every kind of line you parse arrives,** with a reachable assertion per kind. Otherwise a changed format or a disabled log level looks like a quiet system.

@@ -2,7 +2,7 @@
 
 ## Why client containers
 
-Run the system's real client library in client containers, faulted like the servers, and have the driver tell them what to do. Client libraries often hold part of the protocol: retry numbering, sessions, leases, multi-step commits, cached routing, batching. The servers' recovery code for these runs only when a client fails partway through. A hand-written client never runs the library's own retry and recovery code.
+Client libraries often hold part of the protocol: retry numbering, sessions, leases, multi-step commits, cached routing, batching. The servers' recovery code for these runs only when a client fails partway through, and a hand-written client never runs the library's own retry and recovery code. So run the real library in client containers, faulted like the servers, and have the driver tell them what to do.
 
 Skip client containers only when the system has no client library, or its client keeps nothing between requests. Then the driver sends requests to the servers itself, as in the example in `references/workload/driver.md`.
 

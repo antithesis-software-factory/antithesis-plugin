@@ -8,34 +8,26 @@ Dependencies: `hegeltest` with `features = ["static-engine"]`, and `antithesis_s
 
 `main` does this, in order:
 
-1. **Call `antithesis_init()`** first, so assertions and lifecycle calls work.
-2. **Bind the UDP ports and start the background threads:** the log receiver on 7777 (`references/workload/system-logs.md`) and, with client containers, the completion-event receiver on 7778. Binding first means the driver hears the system's logs from boot on. Node states learned during setup are in the root snapshot, so every timeline starts with them; the log assertions wait for step 6.
-3. **Wait until the system is ready.** Retry; never sleep a fixed time. Check every node the workload sends to, and repeat until all pass.
-
-   Ready means each node serves the requests the workload sends: a read answers, the cluster has a leader, all members joined. An open port isn't enough.
-
-   With client containers, also wait for every client program's health request. A client that can't start then fails setup loudly, so the workload never runs with clients it can't drive.
-
-   On each pass, print which nodes aren't ready yet, so a run that times out in setup shows in its logs what it waited for. Give the wait no overall deadline: `--setup-timeout` bounds it in Antithesis, and `snouty validate --timeout` bounds it locally.
-4. **Run admin setup, if any.** Operations that must happen before the workload starts (create the cluster, a schema, users, buckets, topics) can run here when that's easier than in the system's containers. They use a direct connection to the servers (`references/workload/clients.md`). Retry each until it succeeds, and treat "already exists" as success, since a retried request may have taken effect. Keep it fast: it counts toward setup time.
-5. **Report setup complete** with `antithesis_sdk::lifecycle::setup_complete(&details)`. Nothing else reports setup complete. Antithesis takes the root snapshot some time after it.
-6. **Wait for `/workload-active`.** Poll for the file every 100 ms. This wait is outside the state machine, so a sleep loop is fine. The driver container's `first_` command creates the file (`references/workload/harness.md`). Then set the flag that turns on the log assertions ("Parse the lines" in `references/workload/system-logs.md`).
-7. **Mark the start** with `assert_reachable!("the workload starts", ...)`, so a run and the local loop both show that the first command ran and the driver got past the wait.
+1. **Call `antithesis_init()`.**
+2. **Start the UDP receivers:** the log receiver on 7777 (`references/workload/system-logs.md`) and, with client containers, the completion-event receiver on 7778. Started first, they hear the system's logs from boot on, and node states learned during setup are in the root snapshot.
+3. **Wait until the system is ready.** Retry until every node the workload sends to serves its requests: a read answers, the cluster has a leader, all members joined. An open port isn't enough, and never sleep a fixed time. With client containers, also wait for every client program's health request, so a client that can't start fails setup loudly. On each pass, print which nodes aren't ready, so a setup timeout shows what it waited for. Give the wait no deadline of its own: `--setup-timeout` bounds it in Antithesis, and `snouty validate --timeout` locally.
+4. **Run admin setup, if any:** creating the cluster, a schema, users, buckets or topics, when that's easier here than in the system's containers. Use a direct connection to the servers (`references/workload/clients.md`). Retry each until it succeeds, and treat "already exists" as success, since a retried request may have taken effect. It counts toward setup time.
+5. **Report setup complete** with `antithesis_sdk::lifecycle::setup_complete(&details)`. Nothing else reports it.
+6. **Wait for `/workload-active`,** polling every 100 ms; this wait is outside the state machine, so a sleep loop is fine. The driver container's `first_` command creates it (`references/workload/harness.md`). Then set the `active` flag that turns on the log assertions ("Parse the lines" in `references/workload/system-logs.md`).
+7. **Mark the start** with `assert_reachable!("the workload starts", ...)`.
 8. **Run the state machine** forever.
 
-Nothing before step 8 draws from hegel. Every timeline branches from a snapshot taken while the driver waits in step 6, so all randomness comes after the timeline starts.
-
-The `main` at the end of the example below does all of this.
+Nothing before step 8 draws from hegel: every timeline branches from a snapshot taken during step 6, so all randomness comes after it. The example's `main` below does all of this.
 
 ### Shared volumes for out-of-band facts
 
-When the driver can't tell over the network that a node is ready, or needs something a node generates (credentials, certificates, a node ID, a "migration done" marker), share a named volume between that node's container and the driver, and have the node write a file there. Use it only for setup and out-of-band facts, never to observe what the workload tests. A file on a volume isn't subject to network faults, and it survives container restarts, so a marker can be stale after a restart. The Compose wiring is in `references/workload/harness.md`.
+When the driver can't tell over the network that a node is ready, or needs something a node generates (credentials, certificates, a node ID, a "migration done" marker), share a named volume between that node's container and the driver, and have the node write a file there (wiring in `references/workload/harness.md`). Never use it to observe what the workload tests: a volume isn't subject to network faults. A marker survives container restarts, so it can be stale after one.
 
 ## Example: a replicated key-value store
 
 This drives a replicated key-value store with no client library. It serves `PUT /k/<key>` and `GET /k/<key>` on any node, and promises linearizable reads.
 
-Left out below: the HTTP client (`put`, `get`), reading the node list from `KV_URLS`, `draw_target` (a node and one of `KEYS` keys), `wait_until_ready`, `wait_for_nodes` ("Quiet periods"), and `KeyHistory`'s `sent`, `acked` and `overlaps` (a write was in flight during the read). `acked` finds its write by value, since pruning may have moved it. `wait_until_ready` loops over `self.nodes` and the client programs until each answers within `TIMEOUT`, printing the ones that don't, and pauses about 1 s between passes.
+Left out below: the HTTP client (`put`, `get`), reading the node list from `KV_URLS`, `draw_target` (a node and one of `KEYS` keys), `wait_until_ready`, `wait_for_nodes` ("Quiet periods"), and `KeyHistory`'s `sent`, `acked` and `overlaps` (a write was in flight during the read). `acked` finds its write by value, since pruning may have moved it. `wait_until_ready` is step 3, with requests bounded by `TIMEOUT` and about 1 s between passes.
 
 ```rust
 /// Short, so a request to an unreachable node costs a moment, not a stalled round.
@@ -152,11 +144,11 @@ fn main(tc: TestCase) {
 
 ## Driving client containers
 
-With client containers (`references/workload/clients.md`), the rules above still hold. The driver sends commands to a client program, and these also apply:
+With client containers (`references/workload/clients.md`), also:
 
 - **Each rule draws which client acts.** Bugs between clients need several of them acting on the same keys, locks or transactions.
-- **Outcomes arrive as events.** Tag each operation with an ID, and wait for the response only up to the usual short timeout. A background thread receives the client programs' completion events on UDP port 7778, separate from the logs. It resolves each operation in the model as its event arrives, the way `references/workload/system-logs.md` handles log lines. An operation without an event stays unknown until its client's boot changes or the ambiguity window passes. A dropped event leaves its operation unknown, which is safe.
-- **Bursts are cheap.** A rule can send several operations to one client without waiting for their responses. That gets the library batching beyond what the worker count allows.
+- **Outcomes arrive as events.** Tag each operation with an ID, and wait for the response only up to the usual short timeout. A background thread receives the completion events on UDP port 7778 and resolves each operation in the model as its event arrives. An operation without an event stays unknown until its client's boot changes or the ambiguity window passes.
+- **Bursts are cheap.** A rule can send several operations to one client without waiting for their responses, which gets the library batching beyond what the worker count allows.
 - **A changed boot identifier means the client restarted.** Everything outstanding on its old boot gets an unknown outcome, and the model forgets that client's sessions, locks and open transactions. Unknown includes what the client believed: a client that was paused, not restarted, may still think it holds a lock that has since expired. Put a reachable assertion where the driver notices a new boot.
 - **An unreachable client is normal.** It may be paused or mid-restart. Treat commands to it as unknown, and keep driving the other clients.
 - **Read-only checks may go to the servers directly** (`references/workload/clients.md`). Actions never do.
@@ -174,25 +166,10 @@ With client containers (`references/workload/clients.md`), the rules above still
 
 ## Guiding exploration
 
-The workload's own assertions mark states worth reaching. Their failure means the workload never reached that state. Properties are separate: a property says what the system must do, its failure is a bug, and it comes from the properties module (`references/properties/MODULE.md`).
+The workload's own assertions mark states worth reaching. They show which situations happened, where coverage shows only which code ran, and Antithesis explores from them. Their failure means the workload never reached that state. Properties are separate: a property says what the system must do, its failure is a bug, and it comes from the properties module (`references/properties/MODULE.md`).
 
-The workload's assertions do two things:
-
-- **They show what the workload reaches.** Coverage shows which code ran. These show which situations happened: a read overlapping a write to the same key, a leader change while a follower lags.
-- **Antithesis explores from them.** They mark interesting states for Antithesis.
-
-The assertions:
-
-- **`assert_sometimes!`**: a situation that should happen at least once per run. If both a situation and its opposite are possible (a game is sometimes won and sometimes lost), add one for each. Examples:
-  - a leader election is triggered
-  - a transaction aborts
-  - a rate limiter rejects a request
-  - a search returns no results
-  - a cache entry expires and is refilled
-  - a read returns a value written by another client
-  - a compaction runs while reads are in flight
-  - two clients edit the same document at the same time
-- **`assert_reachable!`**: code that should run at least once. The same as `assert_sometimes!(true, ...)`.
+- **`assert_sometimes!`**: a situation that should happen at least once per run, such as a leader election, a transaction abort, a read returning another client's write, or two clients editing the same document at once. If a situation and its opposite are both possible, add one for each.
+- **`assert_reachable!`**: code that should run at least once.
 - **Numeric and boolean forms** (`assert_sometimes_greater_than!`, `assert_sometimes_all!`, and so on): a situation that's a comparison or a combination, like a follower falling more than 10 entries behind. They tell Antithesis how close each moment came, which guides its search better than true or false.
 
 Put them:

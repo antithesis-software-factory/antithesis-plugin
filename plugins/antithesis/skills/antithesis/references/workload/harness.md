@@ -44,9 +44,9 @@ The driver image's test template, `/opt/antithesis/test/v1/main/`, holds exactly
 touch /workload-active
 ```
 
-Antithesis runs the first command once at the start of every timeline, after setup complete and the root snapshot, in the container that holds it. The file appears on the driver's filesystem exactly when fuzzing starts, and every timeline starts from the snapshot, where the file doesn't exist yet.
+Antithesis runs the first command once at the start of every timeline, after setup complete and the root snapshot, in the container that holds it. So the file appears exactly when fuzzing starts, and every timeline starts from a snapshot without it.
 
-Test commands must be executable. `snouty validate` starts the deployment and waits for the driver's setup complete. It then finds the test commands under `/opt/antithesis/test/v1` in the running containers, and reports any that aren't executable. It runs none of them.
+Test commands must be executable. `snouty validate` reports any that aren't.
 
 ## 3. Client containers
 
@@ -93,6 +93,4 @@ Launch every run of the workload with the `advanced_test` launcher, following `r
 --param custom.container_cpu_fault_exclusions=driver
 ```
 
-The container and CPU exclusions take exact container names. The network exclusion is a regex: to exclude several containers, use `^a$|^b$`. Don't use parentheses; a bug breaks them.
-
-Exclude only the driver container. Client containers get faulted like the servers, since their failures are what they're there for.
+The container and CPU exclusions take exact container names. The network exclusion is a regex: for several containers use `^a$|^b$`, without parentheses, which a bug breaks. Exclude only the driver: client containers are there to be faulted.

@@ -8,7 +8,7 @@ The `references/triage/` directory has detailed guides. Read each one only when 
 
 ## Find the run
 
-`snouty runs show <run_id>` gives the run's status and metadata.
+Get the run's status with `snouty runs show <run_id>`.
 
 - If the run can't be found, wait 10 seconds and retry. A run can take a while to appear in the API after it starts.
 - If the status is `starting`, wait for it with `snouty runs wait --until ready <run_id>`.
@@ -26,7 +26,7 @@ If no mode is given, use `monitor` for an `in_progress` run and `summary` for a 
 
 ## Read the properties
 
-`snouty runs properties <run_id> --detail` lists every property with its status, its pass and fail counts, and its example moments. Add `--failing` to list only the failing ones. Read `references/triage/properties.md` for the format, the assertion types, and what pass/fail ratios suggest.
+List them with `snouty runs properties <run_id> --detail`. Read `references/triage/properties.md` for the assertion types and what pass/fail ratios suggest.
 
 If the run is `in_progress`, don't wait for it to finish. Follow `snouty runs stream --help` to get the current results and new ones as they arrive.
 
@@ -50,8 +50,8 @@ The property status and assertion text alone are not enough. Download and read t
 
 An incomplete run can still have property results. Read them as for any run, and triage any failing properties as usual. Then:
 
-1. Look for `Failure Hash`, `Failure VTime` and `Failure Reason` in `snouty runs show <run_id>`. If there is a failure moment, download a log for it as described in `references/triage/logs.md`.
-2. Get the build logs with `snouty runs build-logs <run_id>`, especially if there is no failure moment, and look for errors.
+1. If `snouty runs show <run_id>` gives a failure moment, download its log (`references/triage/logs.md`). Use its failure reason, if any, as a lead.
+2. Look for errors in `snouty runs build-logs <run_id>`, especially if there is no failure moment.
 
 ## Report
 

@@ -2,7 +2,7 @@
 
 ## Download a log
 
-Use `snouty runs --json logs`, redirecting the stream to a file:
+Read `snouty runs logs --help` first. Download the log as JSON to a file:
 
 ```bash
 mkdir -p /tmp/triage
@@ -10,92 +10,39 @@ LOG=/tmp/triage/${PROPERTY_NAME}_${INPUT_HASH}.ndjson
 snouty runs --json logs "$RUN_ID" "$INPUT_HASH" "$VTIME" > "$LOG"
 ```
 
-Some logs are very large. A download can take 10 minutes or more, and you cannot
-know the size of a log before you download it. Run the download with a timeout.
-If the download does not complete, read "Large logs" below.
+Pass `INPUT_HASH` and `VTIME` verbatim; do not round or reformat them. Always write to a unique path unless told otherwise: other agents may be downloading logs at the same time.
 
-`snouty runs --json logs` streams the history up to the moment as NDJSON — one JSON event per line. Snouty post-processes the stream: it strips ANSI escape codes from `output_text` and adds an `active_faults` field to every event (see "Active (ongoing) faults" below). See "Analyzing logs with jq" below for how to query and filter the resulting logs.
+Snouty strips ANSI escape codes from `output_text` and adds an `active_faults` field to every event (see "Active faults" below).
 
-`INPUT_HASH` and `VTIME` come verbatim from the property's `examples` or `counterexamples` array (or from the `Failure Hash` and `Failure VTime` in `snouty runs show`, or from `snouty runs search`) — pass them verbatim, do not round or reformat.
-
-Always write logs to a unique path unless you have explicit instructions otherwise. Other agents may be concurrently downloading logs.
+Some logs are very large. A download can take 10 minutes or more, and you cannot know a log's size in advance. Run the download with a timeout.
 
 ## Large logs
 
-If the download does not complete before the timeout, decide what to do:
+If the download does not complete before the timeout, decide:
 
-- **You need the full log** — wait for the download to complete. Use a longer
-  timeout, or wait for the command if it continues in the background. Only a
-  full log gives the complete fault state.
-- **A part of the log is sufficient** — cancel the download. Then get a slice
-  with `--begin-vtime`.
+- **You need the full log** — wait for it, with a longer timeout or by letting the command continue in the background. Only a full log gives the complete fault state.
+- **Part of the log is enough** — cancel the download and get a slice.
 
-Do not try to estimate the size of the log or the time that remains. The density
-of the log is not constant. One part of a run can be silent. Another part can be
-very dense.
+Do not try to estimate the log's size or the time that remains: log density varies widely across a run.
 
-Keep the incomplete file if you cancel the download. It contains the start of the
-run: `setup`, container lifecycle, and the early workload. A slice does not have
-this data. But the incomplete file does not contain the moment of the failure. Do
-not analyze it as a complete log. Its last line can be incomplete, so use
-`fromjson? // empty` in your jq filters.
+Keep the incomplete file if you cancel. It holds the start of the run (`setup`, container lifecycle, the early workload), which a slice lacks. It does not hold the failure moment, so do not analyze it as a complete log. Its last line can be truncated, so use `fromjson? // empty` in your jq filters.
 
 ### Get a slice of the log
-
-`--begin-vtime` starts the stream at a vtime that you select:
 
 ```bash
 snouty runs --json logs "$RUN_ID" "$INPUT_HASH" "$VTIME" \
   --begin-vtime "$BEGIN_VTIME" > slice.ndjson
 ```
 
-A slice that stops at `VTIME` contains the moment of the failure. This is
-usually the most useful part of the log. For more context, use a smaller
-`BEGIN_VTIME`.
+A slice that ends at `VTIME` holds the failure moment, usually the most useful part. For more context, use a smaller `BEGIN_VTIME`.
 
-> **The fault annotations in a slice are partial.** Snouty calculates
-> `active_faults` from the fault events in the stream. A slice does not contain
-> the events before `BEGIN_VTIME`, so a fault that started earlier does not
-> appear. The faults that you see are correct, but other faults can also be
-> active. An empty `active_faults` is not proof that no fault was active.
-> Download the full log if you need the complete fault state.
+> **The fault annotations in a slice are partial.** Snouty computes `active_faults` from the fault events in the stream, so a fault that started before `BEGIN_VTIME` does not appear. The faults you see are correct, but others can also be active; an empty `active_faults` is not proof that no fault was active. Download the full log if you need the complete fault state.
 
-Give the vtime range that you analyzed when you report results from a slice.
+When you report results from a slice, give the vtime range you analyzed.
 
-## JSON Log format
+## JSON log format
 
-This document focuses on understanding the JSON log format from `snouty`. You may use this to interpret other formats, but the result will be much more lossy.
-
-The JSON log is a stream of event objects, one per line. Every event has `source` and `moment` fields. The remaining fields vary by event type.
-
-### Event schema
-
-```text
-{
-  "source": {
-    "name": string, // e.g. "fault_injector", "setup", the container name
-    "stream"?: "info"|"error",
-    "container"?: string // Docker container name, present on app events
-  },
-  "moment": {
-    "vtime": number,                // virtual time in seconds
-    "input_hash": string
-  },
-  "output_text"?: string,           // application stdout/stderr line
-  "fault"?: { ... },                // fault injection event
-  "info"?: { ... },                 // fault_injector status
-  "event"?: string,                 // container lifecycle (create/init/start)
-  "antithesis_setup"?: { ... },     // SDK setup-complete signal
-  "command"?: string,               // test template task lifecycle
-  ...                               // other fields may be included
-}
-```
-
-### Virtual time
-
-Events are globally ordered by `moment.vtime`, deterministic virtual time in seconds. In a downloaded log, snouty emits `moment.vtime` as a JSON number, so jq filters can compare it numerically directly (e.g. `.moment.vtime >= 100`).
-
-### Event types at a glance
+Each event has `source` (`name`; `stream`, which is `"info"` or `"error"`; and `container` on application events) and `moment` (`vtime`, `input_hash`). The other fields depend on the event type:
 
 | Identifying field(s)             | `.source.name`             | What it is                                                       |
 | -------------------------------- | -------------------------- | ---------------------------------------------------------------- |
@@ -104,241 +51,36 @@ Events are globally ordered by `moment.vtime`, deterministic virtual time in sec
 | `info`                           | `fault_injector`           | Fault injector status message                                    |
 | `event`, `image`                 | `containers_meta`          | Container lifecycle (create/init/start/died)                     |
 | `antithesis_setup`               | `*`                        | SDK setup-complete signal                                        |
+| `antithesis_assert`              | `*`                        | SDK assertion evaluation (`.antithesis_assert.id` is the property name); `hit: false` entries are the catalog, not evaluations |
 | `command`, `started_task`        | `antithesis_test_composer` | Test command started                                             |
 | `command`, `command_return_code` | `antithesis_test_composer` | Test command finished                                            |
 | `probability`                    | `bug_probability`          | Bug probability snapshot (causal-analysis runs only — see below) |
 
+### Virtual time
+
+Order and compare events by `moment.vtime`, a JSON number in the downloaded log. Do not order by timestamps printed by the application: faults like clock skew and thread pausing put them out of order.
+
+### Application log lines
+
+Some applications serialize configuration objects or JSON payloads into their log lines, which can be 1–4 KB long. Truncate long `output_text` when presenting logs to the user, and expect keyword searches to hit these dumps rather than meaningful messages.
+
 ### Fault events
 
-Events from `fault_injector` with a `fault` field describe injected faults.
+Events with a `fault` field come from `fault_injector`. Its fields: `name`, `type`, `affected_nodes` (container names, or `["ALL"]`), `max_duration` (seconds), and an optional `details` object (`disruption_type`, `partitions`, `offset`, etc.).
 
-Key fields in `fault`:
+- **Network Partition** (`partition`/`network`): Containers are split into partition groups. Links between groups experience the `disruption_type`. Links within a group are unaffected by this event but may be faulted by an overlapping one.
+- **Network Clog** (`clog`/`network`): Links of containers in `affected_nodes` experience the `disruption_type` at random times for random durations.
+- **Network Restore** (`restore`/`network`): Restores all faulted network links.
+- `disruption_type` values: `Stopped` (packets dropped), `Slowed` (packets delayed), `Jammed` (packets queued until a future delivery time).
+- **Container Kill / Stop** (`kill`|`stop`/`node`): The container is killed or stopped for `max_duration` seconds, then restarted by Antithesis. `max_duration` may be `"0"` (a string), meaning the restart has no controlled end. A restart policy may restart the container sooner.
+- **Container Pause** (`pause`/`node`): The container is frozen for `max_duration` seconds. It stays on the network but processes nothing, so other containers see timeouts.
+- **CPU Throttle** (`throttle`/`node`): The container's CPU is slowed for `max_duration` seconds.
+- **Clock Skew** (`skip`/`clock`): The system clock jumps forward or backward by `details.offset` seconds. With `max_duration`, the offset is temporary (jitter) and reversed afterwards; without it, permanent. Offsets are cumulative.
+- Only one node fault can be active on a container at a time. A second node fault on a container with an active one is silently dropped.
 
-- `name`: `partition`, `clog`, `restore`, `kill`, `stop`, `pause`, `throttle`,
-  `skip`
-- `type`: `network`, `node`, `clock`
-- `affected_nodes`: array of container names, or `["ALL"]`
-- `max_duration`: seconds (number) — how long the fault lasts
-- `details`: optional object with fault-specific data (`disruption_type`,
-  `partitions`, `offset`, etc.)
+### Active faults
 
-### Application log events (`output_text`)
-
-The `output_text` field contains stdout/stderr lines from SUT containers.
-
-Some applications serialize configuration objects, debug structs, or JSON
-payloads directly into their log messages. These lines can be very long
-(1-4 KB). When presenting logs to the user, consider truncating long
-`output_text` values. When searching, be aware that keyword matches may hit
-these serialized dumps rather than meaningful log messages.
-
-### Bug probability events (causal-analysis runs only)
-
-Some logs contain events from `source.name == "bug_probability"`, each
-carrying a string-encoded `probability` field (e.g. `"94.44"` meaning 94.44%).
-**These events are only present when the log comes from a causal-analysis
-experiment, not a normal run.** Causal analysis takes a history that
-exhibited a property failure, time-travels to a series of points along that
-history, and re-runs forward from each point under different randomness,
-recording how often the bug still occurs. The `probability` is essentially
-"given the system state at this vtime, what fraction of forward replays
-still hit the property failure?"
-
-Use these events when they exist; do not expect them. Most logs you triage
-will not contain them.
-
-When present, the vtime where the probability ramps from low to high marks
-the **moment of no return** for the bug: before that window the system
-could have avoided the failure, after it the failure is essentially locked
-in. This is a more precise pointer to root-cause timing than the assertion
-firing itself, which often happens long after the damaging events.
-
-Extract the trajectory with jq (the log is in `moment.vtime` order, so the
-output is too):
-
-```bash
-jq 'select(.source.name == "bug_probability") | {vt: .moment.vtime, p: .probability}' "$LOG"
-```
-
-If this produces no output, the log is from a normal run and there is no
-bug-probability signal to use.
-
-## Analyzing logs with jq
-
-The downloaded log is NDJSON — one JSON event per line. All examples below
-assume the log path is in `$LOG`:
-
-```bash
-LOG="/path/to/log.ndjson"
-```
-
-**Working with NDJSON:** filter by streaming — `jq 'select(…)'` applies the
-filter to each event and prints the matches. The output is a stream of JSON
-values, which you can pipe straight into another `jq` to refine further (jq reads
-a stream of values whether they are compact or pretty-printed). Logs are always
-ordered by `moment.vtime`, so matches come out chronological — no need to re-sort.
-When you genuinely need to aggregate across all events — dedup with `unique`,
-reorder with `sort_by`, bucket with `group_by`, or count with `length` — slurp
-the stream with `jq -s` and use jq's builtins.
-
-**Null-safe string matching:** Many event fields are optional and may be `null`,
-including `source.name`. Use jq's `//` (coalesce) operator before string
-functions like `test()` or `startswith()` to avoid errors:
-`.output_text // "" | test("pattern")`, `(.source.name // "") | startswith("node")`.
-
-### Suggested first-look workflow
-
-These three queries orient you quickly when opening a new log.
-
-**1. List unique sources** — show unique `source.name` / `source.container`
-combinations to see what is in the log:
-
-```bash
-jq -s '[.[] | {name: .source.name, container: .source.container}] | unique' "$LOG"
-```
-
-**2. Find failed commands** — find test commands that finished with non-zero
-exit:
-
-```bash
-jq 'select(.command_return_code != null and .command_return_code != "0") | {vtime: .moment.vtime, command, command_return_code}' "$LOG"
-```
-
-**3. Search for errors in application logs**:
-
-```bash
-jq 'select(.output_text // "" | test("error|panic|fatal|crash"; "i")) | {vtime: .moment.vtime, source: .source.name, text: .output_text[:200]}' "$LOG"
-```
-
-### Filtering events
-
-Filter by source name:
-
-```bash
-jq 'select(.source.name == "fault_injector")' "$LOG"
-```
-
-Filter by stream (application stderr only):
-
-```bash
-jq 'select(.source.stream == "error")' "$LOG"
-```
-
-Filter fault events by fault name:
-
-```bash
-jq 'select(.fault.name == "partition")' "$LOG"
-```
-
-Filter by fault type:
-
-```bash
-jq 'select(.fault.type == "network")' "$LOG"
-```
-
-Search output_text for a keyword (case-insensitive):
-
-```bash
-jq 'select(.output_text // "" | test("error"; "i"))' "$LOG"
-```
-
-Container lifecycle events (`create` / `init` / `start` / `died`):
-
-```bash
-jq 'select(.event != null)' "$LOG"
-```
-
-Find failed test-template commands (non-zero exit code):
-
-```bash
-jq 'select(.command_return_code != null and .command_return_code != "0")' "$LOG"
-```
-
-Find all test command completions:
-
-```bash
-jq 'select(.command_return_code != null)' "$LOG"
-```
-
-Find all SDK assertion events:
-
-```bash
-jq 'select(.antithesis_assert != null)' "$LOG"
-```
-
-Find all assertion events for a specific property:
-
-```bash
-jq 'select(.antithesis_assert.id == "property name here")' "$LOG"
-```
-
-Combine filters — fault partitions affecting a specific container:
-
-```bash
-jq 'select(.fault.name == "partition" and (.fault.affected_nodes | index("mycontainer") or index("ALL")))' "$LOG"
-```
-
-### Filtering by virtual time
-
-Filter events within a time range (in seconds):
-
-```bash
-jq 'select(.moment.vtime >= 100 and .moment.vtime <= 110)' "$LOG"
-```
-
-Events after a specific time:
-
-```bash
-jq 'select(.moment.vtime >= 85.5)' "$LOG"
-```
-
-## Interpreting logs
-
-### Two sources of log lines
-
-Antithesis logs interleave two sources:
-
-1. **Antithesis system events** — fault injection, container lifecycle,
-   network changes, compose orchestration. Identified by source names like
-   `fault_injector`, `containers_meta`, `setup`, `antithesis_test_composer`.
-2. **Application logs** — from the SUT containers. Identified by having
-   `output_text` and a `source.container` field matching a Docker container
-   name.
-
-### Fault types and what they mean
-
-- **Network Partition** (`partition`/`network`): Containers are split into
-  partition groups. Links between different groups experience the
-  `disruption_type`. Links within the same group are unaffected by this event
-  but may be faulted by an overlapping one.
-- **Network Clog** (`clog`/`network`): Links of containers in `affected_nodes`
-  experience the `disruption_type` at random times for random durations.
-- **Network Restore** (`restore`/`network`): Restores all faulted network
-  links.
-- `disruption_type` values: `Stopped` (packets dropped), `Slowed` (packets
-  delayed), `Jammed` (packets queued until a future delivery time).
-- **Container Kill / Stop** (`kill`|`stop`/`node`): The named container is
-  killed or stopped for `max_duration` seconds, then restarted by Antithesis.
-  `max_duration` may be `"0"` (string) meaning the restart has no controlled
-  end. A restart policy may restart the container sooner.
-- **Container Pause** (`pause`/`node`): The named container is frozen in place
-  for `max_duration` seconds. The container remains on the network but cannot
-  process anything — other containers will see timeouts when trying to
-  communicate with it.
-- **CPU Throttle** (`throttle`/`node`): CPU on the target container is slowed
-  for `max_duration` seconds.
-- **Clock Skew** (`skip`/`clock`): System clock is jumped forward or backward
-  by `details.offset` seconds. If `max_duration` is present, the offset is
-  temporary (jitter) and reversed after the duration. If absent, the offset is
-  permanent. Clock offsets are cumulative — each new skip shifts from wherever
-  the clock already is.
-- Only one node fault can be active on a given container at a time. A second
-  node fault targeting a container with an active fault is silently dropped.
-
-### Active (ongoing) faults
-
-Snouty adds an `active_faults` field to every event. This
-field is a dictionary tracking currently active fault windows. The schema:
+Snouty adds `active_faults` to every event, a dictionary of the fault windows open at that event:
 
 ```json
 {
@@ -352,76 +94,59 @@ field is a dictionary tracking currently active fault windows. The schema:
 }
 ```
 
-**Keys and values:**
+- **`network_partition`** / **`network_clog`** — the start vtime of the outer window. Overlapping faults of one type merge into one window, from the earliest start to the latest end. Faults with empty or missing `affected_nodes` are ignored. Without `max_duration`, the window stays open until a `restore` or a fault injector pause.
+- **`node_pause`** / **`node_throttle`** — container name to the vtime its fault started.
+- **`clock_skip`** — `cumulative_offset` is the sum of active offsets (permanent plus jitter); `vtime` is the latest clock fault. Removed when the net offset reaches zero. Only `skip` faults with a nonzero offset are tracked.
 
-- **`network_partition`** / **`network_clog`** — `{"vtime": <float>}` pointing
-  to the start of the outer fault window. Overlapping faults of the same type
-  are merged: the window tracks the earliest start and latest end. Events with
-  empty or missing `affected_nodes` are ignored.
-- **`node_pause`** / **`node_throttle`** — map from container name to the vtime
-  when the fault started. One entry per affected container.
-- **`clock_skip`** — `{"cumulative_offset": <float>, "vtime": <float>}`.
-  `cumulative_offset` is the sum of all active clock offsets (permanent +
-  jitter). `vtime` is the most recent clock fault event. Removed when the net
-  offset reaches zero.
+Windows with `max_duration` expire at `start + max_duration`. A `restore` clears all network windows. A fault injector `paused: true` status event clears all network and node windows; clock windows survive it.
 
-**What is tracked:**
+Not tracked: `kill` and `stop` (they may have no controlled end; the container goes down and comes back), and thread pausing (it produces no fault injector events).
 
-- Network faults (`partition`, `clog`) with non-empty `affected_nodes` and
-  `max_duration` create timed windows. Without `max_duration`, the window stays
-  open until a `restore` or `pause` event.
-- `restore` closes all network fault windows.
-- `pause` and `throttle` node faults create windows that expire after
-  `max_duration`.
-- Clock faults (`skip`) with `details.offset != 0` are tracked. Permanent
-  offsets (no `max_duration`) never expire. Jitter (with `max_duration`) expires
-  and its offset drops from the cumulative total.
+### Bug probability events (causal-analysis runs only)
 
-**What is NOT tracked:**
+Only logs from a causal-analysis experiment have `bug_probability` events; most logs you triage won't. Causal analysis re-runs a failing history forward from a series of points under different randomness. Each event's string `probability` (e.g. `"94.44"`, meaning 94.44%) is the fraction of replays from that vtime that still hit the failure.
 
-- `node/kill` and `node/stop` — may have no controlled end; their semantics are
-  obvious (container goes down and comes back).
-- Thread pausing — does not produce fault injector log events, so it cannot be
-  tracked.
-
-**Clearing behavior:**
-
-- A `restore` event clears all network windows. Node and clock windows are
-  unaffected.
-- A fault injector `paused: true` status event clears all network and node
-  windows. Clock windows survive pause (clock offsets are real state changes
-  that persist).
-- Fault windows with `max_duration` expire automatically when `vtime` passes
-  `start + max_duration`.
-
-To find events that occurred during a network partition:
+The vtime where the probability ramps from low to high is the **moment of no return**: before it the system could have avoided the failure, after it the failure is locked in. This points to the root cause more precisely than the assertion, which often fires long after the damaging events. Extract the trajectory; no output means a normal run:
 
 ```bash
-jq 'select(.active_faults.network_partition != null)' "$LOG"
+jq 'select(.source.name == "bug_probability") | {vt: .moment.vtime, p: .probability}' "$LOG"
 ```
 
-To find events during any node fault:
+## Analyzing logs with jq
+
+The log is in `moment.vtime` order, so `jq 'select(…)'` output is chronological. Many fields are optional and can be `null`, including `source.name`; coalesce with `//` before string functions: `.output_text // "" | test("pattern")`.
+
+### First look
+
+List the sources in the log:
 
 ```bash
-jq 'select(.active_faults | keys[] | startswith("node_"))' "$LOG"
+jq -s '[.[] | {name: .source.name, container: .source.container}] | unique' "$LOG"
 ```
 
-To find events that happened during any ongoing fault:
+Find test commands that exited non-zero:
 
 ```bash
+jq 'select(.command_return_code != null and .command_return_code != "0") | {vtime: .moment.vtime, command, command_return_code}' "$LOG"
+```
+
+Search application logs for errors:
+
+```bash
+jq 'select(.output_text // "" | test("error|panic|fatal|crash"; "i")) | {vtime: .moment.vtime, source: .source.name, text: .output_text[:200]}' "$LOG"
+```
+
+### Faults
+
+Partitions affecting a specific container (`affected_nodes` can be `["ALL"]`):
+
+```bash
+jq 'select(.fault.name == "partition" and (.fault.affected_nodes | index("mycontainer") or index("ALL")))' "$LOG"
+```
+
+Events during any node fault, and during any fault:
+
+```bash
+jq 'select(.active_faults | any(keys[]; startswith("node_")))' "$LOG"
 jq 'select(.active_faults != {})' "$LOG"
 ```
-
-To find faults within a region of vtime:
-
-```bash
-jq 'select(.fault != null and .moment.vtime >= 85.0 and .moment.vtime <= 86.0)' "$LOG"
-```
-
-### Virtual time vs application timestamps
-
-Antithesis tags each event with its virtual time, which represents an unambiguous global order of events in the simulation. Antithesis can do this since it runs the system deterministically.
-
-Use virtual time as the source of truth for ordering logs rather than timestamps embedded in application logs. Timestamps printed by the application can be out of order due to faults like clock skew and thread pausing.
-
-Use `moment.vtime` for all time-based analysis and ordering.

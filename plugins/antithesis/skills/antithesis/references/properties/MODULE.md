@@ -13,7 +13,7 @@ Input: a property the user wants tested, in their words. For example: "the syste
 
 ### 1. Make it checkable
 
-Restate the property as one condition you can check in code, and confirm that the system promises it: from its docs, its API contract, what its real clients rely on, and its code. Implementations often promise less than what they imitate. Ask the user about anything the code can't answer, such as what "recovered" means or when the 500 milliseconds start.
+Restate the property as one condition checkable in code, and confirm the system promises it, from its docs, its API contract, what its real clients rely on, and its code. Implementations often promise less than what they imitate. Ask the user about anything the code can't answer, such as what "recovered" means or when the 500 milliseconds start.
 
 Pick the assertion type with "Choosing the assertion" in `references/properties/checks.md`.
 
@@ -51,7 +51,7 @@ If it fails without a change, read the system's code. A broken promise is a real
 
 Launch a short run as `references/workload/run-loop.md` describes, and read it with the triage module. The property should pass, and its sometimes or reachable assertion should be hit.
 
-Apply the same rule as locally to early failures. To find the cause of a failure, use the triage module's `root-cause` mode.
+Treat early failures as in step 4. To find a failure's cause, use the triage module's `root-cause` mode.
 
 ## Import properties
 

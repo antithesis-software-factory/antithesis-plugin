@@ -2,13 +2,13 @@
 
 ## 1. Launch a short run
 
-Launch with the smallest compute budget, `--max-compute-hours 12` on the standard tier (15 minutes of fuzzing). Follow `references/launch/MODULE.md` with the launcher and fault exclusions in `references/workload/harness.md`, and read the run with the triage module.
+Launch with the smallest compute budget, `--max-compute-hours 12` on the standard tier. Follow `references/launch/MODULE.md` with the launcher and fault exclusions in `references/workload/harness.md`, and read the run with the triage module.
 
 ## 2. Keep setup fast
 
 Setup is everything before setup complete: the deployment booting, the driver's readiness wait, and any admin setup. Every run spends it before fuzzing.
 
-If a run fails because the driver didn't report setup complete within `--setup-timeout`, find out why setup is slow and fix it. Keep the timeout. The driver's output in the run's logs shows which nodes it was still waiting for. A setup slower than 10 minutes fails a default property even when the timeout allows it.
+If a run fails because the driver didn't report setup complete within `--setup-timeout`, fix the slow setup and keep the timeout. The driver's output in the run's logs shows which nodes it was still waiting for. A setup slower than 10 minutes fails a default property even when the timeout allows it.
 
 ## 3. Check the results
 
@@ -25,6 +25,4 @@ If a run fails because the driver didn't report setup complete within `--setup-t
 
 ## 4. Fix and repeat
 
-Run the local loop (`references/workload/local-loop.md`) again after every change, then launch the next run. A few runs are usually enough.
-
-A short run reaches little of the system's state, so expect failing sometimes assertions for rare conditions. Common sometimes assertions should still fire.
+Run the local loop (`references/workload/local-loop.md`) again after every change, then launch the next run. A few runs are usually enough. Expect a short run to miss sometimes assertions for rare conditions, but not common ones.
