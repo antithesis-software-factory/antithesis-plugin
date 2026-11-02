@@ -102,7 +102,7 @@ impl Driver {
     fn get_value(&self, tc: TestCase) {
         let (node, key) = self.draw_target(&tc);
         let start = Instant::now();
-        // `get` turns a 404 into `None`, and an unparseable body into a value no write produced.
+        // `get` turns a 404 into `None`, and an unparsable body into a value no write produced.
         let Ok(got) = self.get(node, key) else { return }; // a failed read tells us nothing
         let end = Instant::now();
         let history = self.keys[key].lock().unwrap();
@@ -225,4 +225,4 @@ fn quiet_period(&self, tc: TestCase) {
 
 Clock faults continue during a pause, so allow for clock jumps. To test a quiet period locally, set its probability to 1.
 
-For the rest of hegel's API, see https://hegel.dev/ (Rust: https://docs.rs/hegeltest/latest/hegel/).
+For the rest of hegel's API, see <https://hegel.dev/> (Rust: <https://docs.rs/hegeltest/latest/hegel/>).

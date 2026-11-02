@@ -4,7 +4,7 @@ Antithesis is a simulation platform for finding bugs that traditional testing mi
 
 ## Definitions
 
-- **Tenant**: An organization's Antithesis instance, at `<tenant>.antithesis.com`. snouty is configured for one tenant.
+- **Tenant**: An organization's Antithesis instance, at `<tenant>.antithesis.com`.
 - **Launcher**: An Antithesis workflow such as testing or debug.
 - **Run**: A running instance of a Launcher, identified by a run ID (for example: `1d0b6331ec02e8268fee157346701f01-64-0`).
 - **Compute hour**: The unit Antithesis bills by: one core running for one hour. A run's compute budget and performance tier set how long it fuzzes.
@@ -15,14 +15,14 @@ Antithesis is a simulation platform for finding bugs that traditional testing mi
 - **Moment**: An instant on a timeline, identified by an (`input_hash`, `vtime`) pair. `input_hash` is a hash of every input Antithesis sent up to that point.
 - **Branch**: A timeline that splits off another timeline at a moment.
 - **Multiverse**: A tree of timelines branched from each other.
-- **Event**: A record logged at a moment: output from the SUT (stdout or stderr), the Antithesis SDK, or an Antithesis built-in event such as faults.
+- **Event**: A record logged at a moment: SUT output, an SDK call, or an Antithesis event such as a fault.
 - **Driver**: The program that picks actions, sends them to the SUT, and checks the responses. One binary, the main process of its own container.
 - **Workload**: Everything added to the deployment to exercise the SUT. In this skill: the driver, the client programs that run the SUT's client library, and the forwarding of the SUT's logs to the driver.
 - **Property**: A guarantee about the system, as in property-based testing. Antithesis evaluates each property by searching the multiverse, then judging what it found, and reports it as passing or failing with examples (where it held) and counterexamples (where it didn't). Antithesis defines all properties; users can't write one.
 - **Assertion**: An Antithesis SDK call, placed in the workload or the SUT. Antithesis picks up every assertion, and its built-in SDK properties are defined over the assertions it sees, one per assertion type. Each assertion, identified by its message, is evaluated on its own: for example, the `Always` property passes for an assertion that is hit at least once and true on every hit. A failing assertion doesn't stop the program.
 - **Test command**: An executable that Antithesis runs in a container, found under `/opt/antithesis/test/v1/<test>/`. Its name prefix sets when it runs; a `first_` command runs once at the start of every timeline.
 - **Setup**: The start of a run, when the SUT and workload are deployed and made ready. It ends when the workload reports **setup complete**; Antithesis then snapshots the system, and every timeline starts from that snapshot.
-- **Config image**: A Docker image which contains orchestration code (docker compose config or k8s manifests) to run the SUT and workload in Antithesis.
+- **Config image**: A Docker image with the Docker Compose file or Kubernetes manifests that run the SUT and workload.
 
 ## Test runs
 

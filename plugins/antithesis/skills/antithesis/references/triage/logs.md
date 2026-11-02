@@ -46,17 +46,19 @@ When you report results from a slice, give the vtime range you analyzed.
 
 Each event has `source` (`name`; `stream`, which is `"info"`, `"error"` or `"internal"`; and `container` on application events) and `moment` (`vtime`, `input_hash`). The other fields depend on the event type:
 
-| Identifying field(s)             | `.source.name`             | What it is                                                       |
-| -------------------------------- | -------------------------- | ---------------------------------------------------------------- |
-| `output_text`                    | container name             | Application log line (stdout/stderr)                             |
-| `fault`                          | `fault_injector`           | Fault injection event                                            |
-| `info`                           | `fault_injector`           | Fault injector status message                                    |
-| `event`, `image`                 | `containers_meta`          | Container lifecycle (create/init/start/died)                     |
-| `antithesis_setup`               | `*`                        | SDK setup-complete signal                                        |
-| `antithesis_assert`              | `*`                        | SDK assertion evaluation (`.antithesis_assert.id` is the property name); `hit: false` entries are the catalog, not evaluations |
-| `command`, `started_task`        | `antithesis_test_composer` | Test command started                                             |
-| `command`, `command_return_code` | `antithesis_test_composer` | Test command finished                                            |
-| `probability`                    | `bug_probability`          | Bug probability snapshot (causal-analysis runs only — see below) |
+| Identifying field(s)             | `.source.name`             | What it is                                                              |
+| -------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `output_text`                    | container name             | Application log line (stdout/stderr)                                    |
+| `fault`                          | `fault_injector`           | Fault injection event                                                   |
+| `info`                           | `fault_injector`           | Fault injector status message                                           |
+| `event`, `image`                 | `containers_meta`          | Container lifecycle (create/init/start/died)                            |
+| `antithesis_setup`               | `*`                        | SDK setup-complete signal                                               |
+| `antithesis_assert`              | `*`                        | SDK assertion evaluation (`.antithesis_assert.id` is the property name) |
+| `command`, `started_task`        | `antithesis_test_composer` | Test command started                                                    |
+| `command`, `command_return_code` | `antithesis_test_composer` | Test command finished                                                   |
+| `probability`                    | `bug_probability`          | Bug probability snapshot (causal-analysis runs only — see below)        |
+
+Assertion events with `hit: false` are the assertion catalog, not evaluations.
 
 ### Virtual time
 

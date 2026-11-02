@@ -17,10 +17,12 @@ If a run fails because the driver didn't report setup complete within `--setup-t
 - **Behavior that needs faults.** Sometimes assertions that need faults are reached, and quiet periods start and recover.
 - **Client failures.** Clients restart and get partitioned, and the driver handles it. The reachable assertion where the driver notices a new boot shows this.
 - **Coverage** of code only faults reach, and of services local coverage couldn't measure:
+
   ```bash
   snouty --json runs show <run_id> > run.json
   jq '.results.coverage.files | keys' run.json
   ```
+
   For Go, Rust, C and C++, `.results.coverage.files` maps each instrumented file, by its build path, to the functions that ran, with the spans reached (`[start_line, start_col, end_line, end_col]`).
 
 ## 4. Fix and repeat

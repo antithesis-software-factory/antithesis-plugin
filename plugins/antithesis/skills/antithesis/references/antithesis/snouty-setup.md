@@ -10,7 +10,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/antithesishq/snouty/rel
 
 Or with `cargo binstall snouty`; to update that install, reinstall.
 
-Source: https://github.com/antithesishq/snouty.
+Source: <https://github.com/antithesishq/snouty>.
 
 ## Configure snouty
 
