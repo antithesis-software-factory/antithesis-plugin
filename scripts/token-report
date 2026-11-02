@@ -5,13 +5,14 @@
 # ///
 """Report how many tokens each skill file and module costs, and enforce two budgets.
 
-SKILL.md loads whenever the skill activates, so it has its own budget. A module costs
-what an agent can load for it: SKILL.md, the files SKILL.md names outside any module,
-and everything reachable from the module's MODULE.md, up to another module's
-MODULE.md. Each budget comes from the environment, and mise.toml sets both:
+The top level is SKILL.md and the files it names outside any module. It loads in
+every context that uses the skill, so it gets a small budget. A module is what its
+MODULE.md adds on demand: everything reachable from it, up to another module's
+MODULE.md, that the top level doesn't already load. Each budget comes from the
+environment, and mise.toml sets both:
 
-    SKILL_MD_TOKEN_BUDGET  (default 2000)
-    MODULE_TOKEN_BUDGET    (default 10000)
+    SKILL_TOKEN_BUDGET   (default 2000)
+    MODULE_TOKEN_BUDGET  (default 10000)
 
 Counts use tiktoken's o200k_base encoding. Claude's tokenizer differs, so treat them
 as estimates for comparing files and changes, not as exact Claude counts.
@@ -31,7 +32,7 @@ import tiktoken
 
 from skills import ROOT, references, skills
 
-SKILL_MD_BUDGET = int(os.environ.get("SKILL_MD_TOKEN_BUDGET", "2000"))
+SKILL_BUDGET = int(os.environ.get("SKILL_TOKEN_BUDGET", "2000"))
 MODULE_BUDGET = int(os.environ.get("MODULE_TOKEN_BUDGET", "10000"))
 ENCODING = tiktoken.get_encoding("o200k_base")
 
@@ -80,13 +81,24 @@ class Tree:
                     queue.append(target)
         return seen
 
+    def top_level(self, skill: str) -> set[str]:
+        """SKILL.md and the files it names outside any module."""
+        return self.reachable(skill, f"{skill}/SKILL.md", is_module)
+
+    def top_level_cost(self, skill: str) -> int | None:
+        files = self.top_level(skill)
+        return sum(self.tokens(rel) or 0 for rel in files) if files else None
+
     def module_cost(self, skill: str, module_md: str) -> int | None:
+        """What the module adds to the top level, which is loaded already."""
         if self.read(module_md) is None:
             return None
-        is_module = lambda rel: rel.endswith("/MODULE.md")
-        shared = self.reachable(skill, f"{skill}/SKILL.md", is_module)
         own = self.reachable(skill, module_md, lambda rel: is_module(rel) and rel != module_md)
-        return sum(self.tokens(rel) or 0 for rel in shared | own)
+        return sum(self.tokens(rel) or 0 for rel in own - self.top_level(skill))
+
+
+def is_module(rel: str) -> bool:
+    return rel.endswith("/MODULE.md")
 
 
 def change(now: int | None, before: int | None) -> str:
@@ -114,24 +126,26 @@ def main() -> int:
     lines = [
         "## Skill token counts",
         "",
-        f"Estimated with tiktoken `o200k_base`. Budgets: SKILL.md {SKILL_MD_BUDGET}, "
-        f"each module {MODULE_BUDGET}.",
+        f"Estimated with tiktoken `o200k_base`. Budgets: top level {SKILL_BUDGET} "
+        f"(SKILL.md and the files it names outside any module), each module {MODULE_BUDGET} "
+        "(what its MODULE.md adds).",
         "",
     ]
     for skill_md in skills():
         skill = skill_md.parent.relative_to(ROOT).as_posix()
         lines += [f"### `{skill}`", ""]
 
-        modules = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / skill).glob("references/*/MODULE.md"))
-        if modules:
-            rows = []
-            for module_md in modules:
-                cost = now.module_cost(skill, module_md)
-                name = Path(module_md).parent.name
-                rows.append([f"`{name}`", str(cost), *([change(cost, base.module_cost(skill, module_md))] if base.ref else [])])
-                if cost > MODULE_BUDGET:
-                    errors.append((module_md, f"module `{name}` loads {cost} tokens; the budget is {MODULE_BUDGET}"))
-            lines += table(["Module", "Tokens", *since], rows)
+        top = now.top_level_cost(skill) or 0
+        rows = [["top level", str(top), str(SKILL_BUDGET), *([change(top, base.top_level_cost(skill))] if base.ref else [])]]
+        if top > SKILL_BUDGET:
+            errors.append((f"{skill}/SKILL.md", f"the top level (SKILL.md and the files it names outside any module) is {top} tokens; the budget is {SKILL_BUDGET}"))
+        for module_md in sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / skill).glob("references/*/MODULE.md")):
+            cost = now.module_cost(skill, module_md) or 0
+            name = Path(module_md).parent.name
+            rows.append([f"`{name}` module", str(cost), str(MODULE_BUDGET), *([change(cost, base.module_cost(skill, module_md))] if base.ref else [])])
+            if cost > MODULE_BUDGET:
+                errors.append((module_md, f"module `{name}` adds {cost} tokens; the budget is {MODULE_BUDGET}"))
+        lines += table(["Loads", "Tokens", "Budget", *since], rows)
 
         files = now.markdown(skill)
         names = [f"{skill}/SKILL.md"] + [f for f in files if f != f"{skill}/SKILL.md"]
@@ -146,10 +160,6 @@ def main() -> int:
             rows.append([label, str(tokens or 0), *([change(tokens, before)] if base.ref else [])])
         rows.append(["**Total**", f"**{total}**", *([f"**{change(total, total_before)}**"] if base.ref else [])])
         lines += table(["File", "Tokens", *since], rows)
-
-        skill_tokens = now.tokens(f"{skill}/SKILL.md") or 0
-        if skill_tokens > SKILL_MD_BUDGET:
-            errors.append((f"{skill}/SKILL.md", f"SKILL.md is {skill_tokens} tokens; the budget is {SKILL_MD_BUDGET}"))
 
     report = "\n".join(lines)
     print(report)

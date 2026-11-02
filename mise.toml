@@ -81,10 +81,11 @@ run = "scripts/check-references"
 [tasks."check:tokens"]
 description = "Report skill token counts, and enforce the SKILL.md and per-module budgets"
 run = "scripts/token-report"
-# Token budgets, estimated with tiktoken. A module is SKILL.md, the files it names
-# outside any module, and everything its MODULE.md reaches up to another module.
+# Token budgets, estimated with tiktoken. The top level (SKILL.md and the files it
+# names outside any module) loads in every context that uses the skill, so keep it
+# small. A module is what its MODULE.md adds on demand, up to another module.
 # Change the defaults here, or override one run: MODULE_TOKEN_BUDGET=12000 mise run check.
-env.SKILL_MD_TOKEN_BUDGET = "{{ get_env(name='SKILL_MD_TOKEN_BUDGET', default='2000') }}"
+env.SKILL_TOKEN_BUDGET = "{{ get_env(name='SKILL_TOKEN_BUDGET', default='2000') }}"
 env.MODULE_TOKEN_BUDGET = "{{ get_env(name='MODULE_TOKEN_BUDGET', default='10000') }}"
 
 [tasks."check:lychee"]
