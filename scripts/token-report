@@ -3,98 +3,154 @@
 # requires-python = ">=3.11"
 # dependencies = ["tiktoken==0.12.0"]
 # ///
-"""Report how many tokens each skill file costs, and enforce the SKILL.md budget.
+"""Report how many tokens each skill file and module costs, and enforce two budgets.
+
+SKILL.md loads whenever the skill activates, so it has its own budget. A module costs
+what an agent can load for it: SKILL.md, the files SKILL.md names outside any module,
+and everything reachable from the module's MODULE.md, up to another module's
+MODULE.md. Each budget comes from the environment, and mise.toml sets both:
+
+    SKILL_MD_TOKEN_BUDGET  (default 2000)
+    MODULE_TOKEN_BUDGET    (default 10000)
 
 Counts use tiktoken's o200k_base encoding. Claude's tokenizer differs, so treat them
 as estimates for comparing files and changes, not as exact Claude counts.
 
-The Agent Skills spec recommends keeping SKILL.md, which loads whenever the skill
-activates, under 5000 tokens and 500 lines. This fails when a SKILL.md exceeds either.
-
-    scripts/token-report               print the report
-    TOKEN_BASE=<git ref> scripts/token-report
-                                       also show the change from that ref
+    scripts/token-report                         print the report
+    TOKEN_BASE=<git ref> scripts/token-report    also show the change from that ref
 
 Under GitHub Actions the report also goes to the job summary.
 """
 import os
 import subprocess
 import sys
+from functools import cache
 from pathlib import Path
 
 import tiktoken
 
-ROOT = Path(__file__).resolve().parent.parent
-SKILL_GLOBS = ["plugins/*/skills/*/SKILL.md", ".agents/skills/*/SKILL.md"]
-MAX_TOKENS = 5000
-MAX_LINES = 500
+from skills import ROOT, references, skills
+
+SKILL_MD_BUDGET = int(os.environ.get("SKILL_MD_TOKEN_BUDGET", "2000"))
+MODULE_BUDGET = int(os.environ.get("MODULE_TOKEN_BUDGET", "10000"))
 ENCODING = tiktoken.get_encoding("o200k_base")
 
 
-def count(text: str | None) -> int | None:
-    return None if text is None else len(ENCODING.encode(text, disallowed_special=()))
+class Tree:
+    """The repo's files, either on disk now or at a git ref. Paths are from the repo root."""
+
+    def __init__(self, ref: str | None = None):
+        self.ref = ref
+
+    @cache
+    def read(self, rel: str) -> str | None:
+        if self.ref is None:
+            path = ROOT / rel
+            return path.read_text() if path.is_file() else None
+        result = subprocess.run(
+            ["git", "show", f"{self.ref}:{rel}"], cwd=ROOT, capture_output=True, text=True
+        )
+        return result.stdout if result.returncode == 0 else None
+
+    def markdown(self, directory: str) -> list[str]:
+        if self.ref is None:
+            return sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / directory).rglob("*.md"))
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", self.ref, "--", directory],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        return [f for f in result.stdout.splitlines() if f.endswith(".md")]
+
+    def tokens(self, rel: str) -> int | None:
+        text = self.read(rel)
+        return None if text is None else len(ENCODING.encode(text, disallowed_special=()))
+
+    def reachable(self, skill: str, start: str, stop) -> set[str]:
+        """Files reachable from `start` by following references, not entering `stop` files."""
+        seen, queue = set(), [start]
+        while queue:
+            rel = queue.pop()
+            text = self.read(rel)
+            if rel in seen or text is None:
+                continue
+            seen.add(rel)
+            for _, target in references(text):
+                target = f"{skill}/{target}"
+                if target.endswith(".md") and not stop(target):
+                    queue.append(target)
+        return seen
+
+    def module_cost(self, skill: str, module_md: str) -> int | None:
+        if self.read(module_md) is None:
+            return None
+        is_module = lambda rel: rel.endswith("/MODULE.md")
+        shared = self.reachable(skill, f"{skill}/SKILL.md", is_module)
+        own = self.reachable(skill, module_md, lambda rel: is_module(rel) and rel != module_md)
+        return sum(self.tokens(rel) or 0 for rel in shared | own)
 
 
-def at_base(base: str, rel: str) -> str | None:
-    result = subprocess.run(
-        ["git", "show", f"{base}:{rel}"], cwd=ROOT, capture_output=True, text=True
-    )
-    return result.stdout if result.returncode == 0 else None
-
-
-def base_files(base: str, skill_dir: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", base, "--", skill_dir],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    return [f for f in result.stdout.splitlines() if f.endswith(".md")]
-
-
-def delta(now: int, before: int | None) -> str:
+def change(now: int | None, before: int | None) -> str:
     if before is None:
         return "new"
-    change = now - before
-    return f"{change:+d}" if change else "0"
+    if now is None:
+        return f"{-before:+d} (deleted)"
+    return f"{now - before:+d}" if now != before else "0"
+
+
+def table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    return [
+        "| " + " | ".join(headers) + " |",
+        "|---|" + "---:|" * (len(headers) - 1),
+        *("| " + " | ".join(row) + " |" for row in rows),
+        "",
+    ]
 
 
 def main() -> int:
-    base = os.environ.get("TOKEN_BASE", "").strip()
-    errors = []
-    lines = ["## Skill token counts", "", "Estimated with tiktoken `o200k_base`.", ""]
-    for skill_md in sorted(p for g in SKILL_GLOBS for p in ROOT.glob(g)):
-        skill = skill_md.parent
-        files = [skill_md] + sorted(p for p in skill.rglob("*.md") if p != skill_md)
-        header = "| File | Tokens |" + (f" Change since `{base[:12]}` |" if base else "")
-        lines += [f"### `{skill.relative_to(ROOT)}`", "", header,
-                  "|---|---:|" + ("---:|" if base else "")]
-        total = total_before = 0
-        for path in files:
-            rel = path.relative_to(ROOT).as_posix()
-            text = path.read_text()
-            tokens = count(text)
-            total += tokens
-            row = f"| `{path.relative_to(skill)}` | {tokens} |"
-            if base:
-                before = count(at_base(base, rel))
-                total_before += before or 0
-                row += f" {delta(tokens, before)} |"
-            lines.append(row)
-            if path == skill_md:
-                line_count = len(text.splitlines())
-                if tokens > MAX_TOKENS:
-                    errors.append((rel, f"SKILL.md is {tokens} tokens; keep it under {MAX_TOKENS}"))
-                if line_count > MAX_LINES:
-                    errors.append((rel, f"SKILL.md is {line_count} lines; keep it under {MAX_LINES}"))
-        if base:
-            # Files deleted or renamed since the base still count toward the change.
-            current = {p.relative_to(ROOT).as_posix() for p in files}
-            for rel in base_files(base, skill.relative_to(ROOT).as_posix()):
-                if rel not in current:
-                    before = count(at_base(base, rel)) or 0
-                    total_before += before
-                    lines.append(f"| `{Path(rel).relative_to(skill.relative_to(ROOT))}` (deleted) | 0 | {-before:+d} |")
-        lines.append(f"| **Total** | **{total}** |" + (f" **{delta(total, total_before)}** |" if base else ""))
-        lines.append("")
+    now = Tree()
+    base = Tree(os.environ.get("TOKEN_BASE", "").strip() or None)
+    since = [f"Change since `{base.ref[:12]}`"] if base.ref else []
+    errors: list[tuple[str, str]] = []
+    lines = [
+        "## Skill token counts",
+        "",
+        f"Estimated with tiktoken `o200k_base`. Budgets: SKILL.md {SKILL_MD_BUDGET}, "
+        f"each module {MODULE_BUDGET}.",
+        "",
+    ]
+    for skill_md in skills():
+        skill = skill_md.parent.relative_to(ROOT).as_posix()
+        lines += [f"### `{skill}`", ""]
+
+        modules = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / skill).glob("references/*/MODULE.md"))
+        if modules:
+            rows = []
+            for module_md in modules:
+                cost = now.module_cost(skill, module_md)
+                name = Path(module_md).parent.name
+                rows.append([f"`{name}`", str(cost), *([change(cost, base.module_cost(skill, module_md))] if base.ref else [])])
+                if cost > MODULE_BUDGET:
+                    errors.append((module_md, f"module `{name}` loads {cost} tokens; the budget is {MODULE_BUDGET}"))
+            lines += table(["Module", "Tokens", *since], rows)
+
+        files = now.markdown(skill)
+        names = [f"{skill}/SKILL.md"] + [f for f in files if f != f"{skill}/SKILL.md"]
+        if base.ref:
+            names += [f for f in base.markdown(skill) if f not in files]
+        rows, total, total_before = [], 0, 0
+        for rel in names:
+            tokens, before = now.tokens(rel), base.tokens(rel) if base.ref else None
+            total += tokens or 0
+            total_before += before or 0
+            label = f"`{Path(rel).relative_to(skill)}`"
+            rows.append([label, str(tokens or 0), *([change(tokens, before)] if base.ref else [])])
+        rows.append(["**Total**", f"**{total}**", *([f"**{change(total, total_before)}**"] if base.ref else [])])
+        lines += table(["File", "Tokens", *since], rows)
+
+        skill_tokens = now.tokens(f"{skill}/SKILL.md") or 0
+        if skill_tokens > SKILL_MD_BUDGET:
+            errors.append((f"{skill}/SKILL.md", f"SKILL.md is {skill_tokens} tokens; the budget is {SKILL_MD_BUDGET}"))
+
     report = "\n".join(lines)
     print(report)
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):

@@ -12,10 +12,22 @@ command -v mise > /dev/null || exit 0
 # An untrusted mise.toml is the user's call to approve, not Claude's.
 mise tasks ls > /dev/null 2>&1 || exit 0
 
+# A hash of every file git sees, tracked or untracked but not ignored. When it matches
+# the last tree that passed, fix and check would change and find nothing, so skip them.
+fingerprint() {
+  git ls-files -z --cached --others --exclude-standard -- . ':!.claude/worktrees' 2> /dev/null |
+    xargs -0 sha1sum 2> /dev/null | sha1sum | cut -d' ' -f1
+}
+stamp=$(git rev-parse --git-path fix-and-check-passed 2> /dev/null)
+if [ -n "$stamp" ] && [ "$(cat "$stamp" 2> /dev/null)" = "$(fingerprint)" ]; then
+  exit 0
+fi
+
 # Link checks stay local, so the network can't fail a turn. CI checks external links.
 export CHECK_OFFLINE=1
 mise run --quiet fix > /dev/null 2>&1
 if output=$(mise run --quiet check 2>&1); then
+  [ -n "$stamp" ] && fingerprint > "$stamp"
   exit 0
 fi
 

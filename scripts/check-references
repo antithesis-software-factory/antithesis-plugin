@@ -9,16 +9,11 @@ from SKILL.md by following references, at any depth.
     scripts/check-references
 """
 import os
-import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-SKILL_GLOBS = ["plugins/*/skills/*/SKILL.md", ".agents/skills/*/SKILL.md"]
-BUNDLED_DIRS = ("references", "scripts", "assets")
-# A path from the skill root, in backticks or as a Markdown link target.
-REFERENCE = re.compile(r"(?:`|\]\()((?:%s)/[^`)\s#]+)" % "|".join(BUNDLED_DIRS))
-PLACEHOLDER = re.compile(r"[<>{}*]")
+from skills import BUNDLED_DIRS, ROOT, references, skills
+
 ANNOTATE = bool(os.environ.get("GITHUB_ACTIONS"))
 
 
@@ -28,14 +23,6 @@ def report(path: Path, line: int, message: str) -> None:
         print(f"::error file={rel},line={line},title=check-references::{message}")
     else:
         print(f"{rel}:{line}: {message}")
-
-
-def references(path: Path):
-    for number, text in enumerate(path.read_text().splitlines(), 1):
-        for match in REFERENCE.finditer(text):
-            target = match.group(1).rstrip(".,:;")
-            if not PLACEHOLDER.search(target):
-                yield number, target
 
 
 def check(skill_md: Path) -> int:
@@ -56,7 +43,7 @@ def check(skill_md: Path) -> int:
         reached.add(source)
         if source.suffix != ".md":
             continue
-        for line, target in sorted(set(references(source))):
+        for line, target in sorted(set(references(source.read_text()))):
             path = skill / target
             if path.is_file():
                 queue.append(path)
@@ -72,10 +59,10 @@ def check(skill_md: Path) -> int:
 
 
 def main() -> int:
-    skills = sorted(p for g in SKILL_GLOBS for p in ROOT.glob(g))
-    problems = sum(check(s) for s in skills)
+    found = skills()
+    problems = sum(check(s) for s in found)
     if not problems:
-        print(f"{len(skills)} skills: every reference resolves and every file is reachable")
+        print(f"{len(found)} skills: every reference resolves and every file is reachable")
     return 1 if problems else 0
 
 
