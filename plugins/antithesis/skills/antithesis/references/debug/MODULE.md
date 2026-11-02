@@ -8,9 +8,9 @@ For a property failure, find its passing and failing moments with `snouty runs s
 
 ## Choosing a run to execute commands in
 
-Any ready run (see the explainer) can execute commands, but a run that already has the moment warm saves rewarming time:
+Any ready run can execute commands, but a run that already has the moment warm saves rewarming time:
 
-1. Prefer a ready run that has already rewarmed the moment. Check with `snouty runs search <run_id> 'filter(ev => ev.moment.input_hash == "<hash>")' --count`; non-zero means every moment of that branch is warm.
+1. Prefer a ready run that has already rewarmed the moment. Check with `snouty runs search --count <run_id> 'filter(ev => ev.moment.input_hash == "<hash>")'`; non-zero means every moment of that branch is warm.
 2. Prefer reusing a ready run over starting a new one.
 3. If no run is ready, start a debug run with `snouty debug`.
 
@@ -20,7 +20,8 @@ Executing commands doesn't keep a run alive. If the run exits while you debug, p
 
 Run a bash command at a moment with `snouty runs exec`.
 
-- The command runs inside the run, and can use only the tools installed in its images, which may differ from yours. If a tool is missing there, process the output on your machine.
+- **With `--container <name>`,** the command runs in that container and can use the tools in its image. The workload's images are under your control, so add any tool you need there.
+- **Without `--container`,** it runs in the guest: the virtual machine in Antithesis's deterministic hypervisor that runs every container or Kubernetes manifest. You can't change its tools, but it has the basics, such as bash and the usual shell commands, `podman` and `kubectl`. Use it for Kubernetes pods, which `--container` doesn't support.
+- If a tool is missing in either place, process the output on your machine.
 - Rewarming a deep moment takes longer: a moment at vtime 10 rewarms faster than one at vtime 100.
-- `--container` doesn't support k8s pods; use `kubectl` for those.
 - To see how the system reacts to an action, such as killing a container, run `sleep 30` with `--events` from the action's end moment.

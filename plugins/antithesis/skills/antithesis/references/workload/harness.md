@@ -29,7 +29,8 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 COPY --from=build /src/target/release/driver /usr/local/bin/
-COPY --chmod=755 driver/first_start_workload /opt/antithesis/test/v1/main/
+COPY driver/first_start_workload /opt/antithesis/test/v1/main/
+RUN chmod 755 /opt/antithesis/test/v1/main/first_start_workload
 CMD ["/usr/local/bin/driver"]
 ```
 
@@ -37,7 +38,7 @@ CMD ["/usr/local/bin/driver"]
 
 The driver image's test template, `/opt/antithesis/test/v1/main/`, holds exactly one test command, `first_start_workload`. No other container has a test template. The directory name `main` is the test name; any name works.
 
-`driver/first_start_workload`, executable:
+`driver/first_start_workload`:
 
 ```sh
 #!/bin/sh
@@ -46,7 +47,7 @@ touch /workload-active
 
 Antithesis runs the first command once at the start of every timeline, after setup complete and the root snapshot, in the container that holds it. So the file appears exactly when fuzzing starts, and every timeline starts from a snapshot without it.
 
-Test commands must be executable. `snouty validate` reports any that aren't.
+Test commands must be executable, which the Dockerfile's `chmod` ensures. `snouty validate` reports any that aren't.
 
 ## 3. Client containers
 
@@ -82,6 +83,8 @@ For out-of-band facts ("Shared volumes for out-of-band facts" in `references/wor
 volumes:
   shared:
 ```
+
+A new volume takes the ownership of its mount point in the image. If the node runs as a non-root user, create the mount point owned by that user in its Dockerfile, for example `RUN mkdir /shared && chown 999:999 /shared`; otherwise Docker creates it owned by root, and the node can't write there.
 
 ## 5. Exclude the driver from faults
 

@@ -20,4 +20,4 @@ For every item, name the action or setup that exercises it, or decide it's out o
 ## 3. Design the deployment to reach it
 
 - Run multiple nodes or replicas if the system supports them.
-- Make the system's process the container's main process (`exec` it), so it receives signals. Give its containers `restart: on-failure`, and don't restart the process in a shell loop.
+- Make the system's process the container's main process (`exec` it), or run it under `forward-logs` (`references/workload/system-logs.md`), which passes signals on, so it receives them. Give its containers `restart: on-failure`, and don't restart the process in a shell loop.

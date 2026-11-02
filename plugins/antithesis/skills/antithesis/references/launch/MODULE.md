@@ -13,4 +13,4 @@ Input: a workload to run in Antithesis, and optionally the launcher, compute bud
 
 ## Setup timeout
 
-Fuzzing starts only once the SUT reaches setup complete, so keep setup fast. Raise `--setup-timeout` only if setup genuinely can't finish within the default.
+Fuzzing starts only once the workload reports setup complete, so keep setup fast. Raise `--setup-timeout` only if setup genuinely can't finish within the default.

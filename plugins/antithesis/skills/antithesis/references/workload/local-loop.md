@@ -33,18 +33,19 @@ The driver's SDK then writes its assertions and its setup-complete event, `{"ant
 
 Nothing runs test commands locally, so run the driver's first command yourself right after `up`, which also checks it. Running it before setup complete is fine.
 
-Start the coverage build from scratch, let the workload run for a few minutes, then stop the system:
+Start the coverage build from scratch, wait for setup complete, let the workload run for a few minutes, then stop the system. Run it as one command, since `COMPOSE_FILE` applies only within it:
 
 ```bash
-C="docker compose -f docker-compose.yaml -f docker-compose.coverage.yaml"
-$C down -v && $C up -d --build
-$C exec driver /opt/antithesis/test/v1/main/first_start_workload
+export COMPOSE_FILE=docker-compose.yaml:docker-compose.coverage.yaml
+docker compose down -v && docker compose up -d --build &&
+docker compose exec -T driver /opt/antithesis/test/v1/main/first_start_workload &&
+timeout 600 sh -c 'until docker compose exec -T driver grep -qs antithesis_setup /tmp/sdk.jsonl; do sleep 5; done' &&
 sleep 300
-$C cp driver:/tmp/sdk.jsonl .
-$C stop
+docker compose cp driver:/tmp/sdk.jsonl .
+docker compose stop
 ```
 
-If `sdk.jsonl` has no `antithesis_setup` line, the driver never got past its readiness wait. `$C logs driver` shows which nodes it was waiting for.
+If setup complete never arrives, the driver stopped in its startup. `docker compose logs driver`, with the same `COMPOSE_FILE`, shows what it was waiting for or which request failed.
 
 ## 3. Check the behavior
 

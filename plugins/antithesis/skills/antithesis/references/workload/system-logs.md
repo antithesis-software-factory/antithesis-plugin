@@ -22,10 +22,21 @@ Run the system's command through it with `driver/forward-logs`, executable:
 
 ```bash
 #!/usr/bin/env bash
-exec "$@" 2> >(exec log-forward >&2)
+# Run the system with its stderr through log-forward. Wait for log-forward to drain
+# before exiting, so the system's last lines, often a crash message, aren't lost.
+fifo=$(mktemp -u) && mkfifo "$fifo"
+log-forward < "$fifo" >&2 &
+forwarder=$!
+"$@" 2> "$fifo" &
+system=$!
+trap 'kill -TERM "$system" 2>/dev/null' TERM INT
+while wait "$system"; status=$?; kill -0 "$system" 2>/dev/null; do :; done
+wait "$forwarder"
+rm -f "$fifo"
+exit "$status"
 ```
 
-If the system logs to stdout, use `exec "$@" > >(exec log-forward)`.
+The wrapper passes SIGTERM and SIGINT on to the system and exits with its status. If the system logs to stdout, send its stdout to the fifo (`> "$fifo"`) and the forwarder's output to stdout.
 
 In each system service's Antithesis Dockerfile, build the forwarder statically, so it runs on any base image, and put the wrapper, which needs bash, in front of the system's command:
 
@@ -41,7 +52,7 @@ COPY driver/forward-logs /usr/local/bin/
 ENTRYPOINT ["forward-logs", "kv-server"]
 ```
 
-Setting `ENTRYPOINT` drops a `CMD` inherited from the base image; restate it if there is one. Set `LOG_FORWARD_ADDR=driver:7777` on each system service.
+Put the wrapper in front of whatever the image ran before. If the base image has its own `ENTRYPOINT`, keep it after `forward-logs`, and restate the base image's `CMD`, which setting `ENTRYPOINT` drops. For a base with `ENTRYPOINT ["docker-entrypoint.sh"]` and `CMD ["postgres"]`, use `ENTRYPOINT ["forward-logs", "docker-entrypoint.sh"]` and `CMD ["postgres"]`. Set `LOG_FORWARD_ADDR=driver:7777` on each system service.
 
 ## 3. Parse the lines
 

@@ -9,25 +9,28 @@ Dependencies: `hegeltest` with `features = ["static-engine"]`, and `antithesis_s
 `main` does this, in order:
 
 1. **Call `antithesis_init()`.**
-2. **Start the UDP receivers:** the log receiver on 7777 (`references/workload/system-logs.md`) and, with client containers, the completion-event receiver on 7778. Started first, they hear the system's logs from boot on, and node states learned during setup are in the root snapshot.
-3. **Wait until the system is ready.** Retry until every node the workload sends to serves its requests: a read answers, the cluster has a leader, all members joined. An open port isn't enough, and never sleep a fixed time. With client containers, also wait for every client program's health request, so a client that can't start fails setup loudly. On each pass, print which nodes aren't ready, so a setup timeout shows what it waited for. Give the wait no deadline of its own: `--setup-timeout` bounds it in Antithesis, and `snouty validate --timeout` locally.
-4. **Run admin setup, if any:** creating the cluster, a schema, users, buckets or topics, when that's easier here than in the system's containers. Use a direct connection to the servers (`references/workload/clients.md`). Retry each until it succeeds, and treat "already exists" as success, since a retried request may have taken effect. It counts toward setup time.
-5. **Report setup complete** with `antithesis_sdk::lifecycle::setup_complete(&details)`. Nothing else reports it.
-6. **Wait for `/workload-active`,** polling every 100 ms; this wait is outside the state machine, so a sleep loop is fine. The driver container's `first_` command creates it (`references/workload/harness.md`). Then set the `active` flag that turns on the log assertions ("Parse the lines" in `references/workload/system-logs.md`).
-7. **Mark the start** with `assert_reachable!("the workload starts", ...)`.
-8. **Run the state machine** forever.
+2. **Start the UDP receivers:** the log receiver on 7777 (`references/workload/system-logs.md`) and, with client containers, the completion-event receiver on 7778. Started first, they hear every line sent after the driver starts, and node states learned during setup are in the root snapshot. A node can log before the driver starts, so don't rely on its first lines.
+3. **Wait until every node is up:** it answers requests, even if only to say the cluster isn't formed yet. An open port isn't enough. With client containers, also wait for every client program's health request, so a client that can't start fails setup loudly.
+4. **Run admin setup, if any:** creating the cluster, a schema, users, buckets or topics, when that's easier here than in the system's containers. Use a direct connection to the servers (`references/workload/clients.md`). Retry each until it succeeds, and treat "already exists" as success, since a retried request may have taken effect.
+5. **Wait until the system serves the workload's requests:** a read answers, the cluster has a leader, all members joined.
+6. **Report setup complete** with `antithesis_sdk::lifecycle::setup_complete(&details)`. Antithesis takes the first setup complete from any process, so remove any other reporter, such as one in the system's containers.
+7. **Wait for `/workload-active`,** polling every 100 ms; this wait is outside the state machine, so a sleep loop is fine. The driver container's `first_` command creates it (`references/workload/harness.md`). Then set the `active` flag, which turns on the exploration assertions in the log thread; guarantee checks there run from boot ("Parse the lines" in `references/workload/system-logs.md`).
+8. **Mark the start** with `assert_reachable!("the workload starts", ...)`.
+9. **Run the state machine** forever.
 
-Nothing before step 8 draws from hegel: every timeline branches from a snapshot taken during step 6, so all randomness comes after it. The example's `main` below does all of this.
+Steps 3 to 5 retry rather than sleep a fixed time, and print what they're waiting for, or why a request failed, whenever that changes, so a setup timeout shows where it stopped without flooding the log. They have no deadline of their own: `--setup-timeout` bounds them in Antithesis, and `snouty validate --timeout` locally. They count toward setup time.
+
+Nothing before step 9 draws from hegel: every timeline branches from a snapshot taken during step 7, so all randomness comes after it. The example's `main` below does all of this.
 
 ### Shared volumes for out-of-band facts
 
-When the driver can't tell over the network that a node is ready, or needs something a node generates (credentials, certificates, a node ID, a "migration done" marker), share a named volume between that node's container and the driver, and have the node write a file there (wiring in `references/workload/harness.md`). Never use it to observe what the workload tests: a volume isn't subject to network faults. A marker survives container restarts, so it can be stale after one.
+When the driver can't tell over the network that a node is ready, or needs something a node generates (credentials, certificates, a node ID, a "migration done" marker), share a named volume between that node's container and the driver, and have the node write a file there (wiring in `references/workload/harness.md`). Never use it to observe what the workload tests: a volume isn't subject to network faults. A marker survives container restarts, so it can be stale after one; check a node's recovery over the network, never by its marker.
 
 ## Example: a replicated key-value store
 
 This drives a replicated key-value store with no client library. It serves `PUT /k/<key>` and `GET /k/<key>` on any node, and promises linearizable reads.
 
-Left out below: the HTTP client (`put`, `get`), reading the node list from `KV_URLS`, `draw_target` (a node and one of `KEYS` keys), `wait_until_ready`, `wait_for_nodes` ("Quiet periods"), and `KeyHistory`'s `sent`, `acked` and `overlaps` (a write was in flight during the read). `acked` finds its write by value, since pruning may have moved it. `wait_until_ready` is step 3, with requests bounded by `TIMEOUT` and about 1 s between passes.
+Left out below: the HTTP client (`put`, `get`), reading the node list from `KV_URLS`, `draw_target` (a node and one of `KEYS` keys), `wait_until_up` and `wait_until_serving` (steps 3 and 5), `wait_for_nodes` ("Quiet periods"), and `KeyHistory`'s `sent`, `acked` and `overlaps` (a write was in flight during the read). `acked` finds its write by value, since pruning may have moved it. Each wait bounds its requests by `TIMEOUT`, with about 1 s between passes.
 
 ```rust
 /// Short, so a request to an unreachable node costs a moment, not a stalled round.
@@ -111,13 +114,14 @@ impl Driver {
 #[hegel::main(phases = [hegel::Phase::Generate])]
 fn main(tc: TestCase) {
     antithesis_init();
-    let driver = Driver { /* ... */ };
     let active = Arc::new(AtomicBool::new(false));
-    // Start the log receiver here, before waiting, with a clone of `active` (references/workload/system-logs.md).
+    let driver = Driver { /* ..., node states built with NodeStates::new(active.clone()) */ };
+    // Start the log receiver here, before waiting, sharing the driver's node states
+    // (references/workload/system-logs.md).
 
-    // Step 3: wait until every node serves.
-    driver.wait_until_ready();
-    // driver.admin_setup(); // optional: schema, users, ... (retried, idempotent)
+    driver.wait_until_up();
+    // driver.admin_setup(); // optional: create the cluster, a schema, users, ... (retried, idempotent)
+    driver.wait_until_serving();
     antithesis_sdk::lifecycle::setup_complete(&json!({"nodes": driver.nodes}));
 
     while !std::path::Path::new(WORKLOAD_ACTIVE).exists() {
@@ -149,9 +153,9 @@ With client containers (`references/workload/clients.md`), also:
 - **Each rule draws which client acts.** Bugs between clients need several of them acting on the same keys, locks or transactions.
 - **Outcomes arrive as events.** Tag each operation with an ID, and wait for the response only up to the usual short timeout. A background thread receives the completion events on UDP port 7778 and resolves each operation in the model as its event arrives. An operation without an event stays unknown until its client's boot changes or the ambiguity window passes.
 - **Bursts are cheap.** A rule can send several operations to one client without waiting for their responses, which gets the library batching beyond what the worker count allows.
-- **A changed boot identifier means the client restarted.** Everything outstanding on its old boot gets an unknown outcome, and the model forgets that client's sessions, locks and open transactions. Unknown includes what the client believed: a client that was paused, not restarted, may still think it holds a lock that has since expired. Put a reachable assertion where the driver notices a new boot.
+- **A changed boot identifier means the client restarted.** Everything outstanding on its old boot gets an unknown outcome, and the model forgets that client's sessions, locks and open transactions. Unknown includes what the client believed: a client that was paused, not restarted, may still think it holds a lock that has since expired. Put a reachable assertion where the driver notices a new boot, once `active` is set, so a restart during setup doesn't count.
 - **An unreachable client is normal.** It may be paused or mid-restart. Treat commands to it as unknown, and keep driving the other clients.
-- **Read-only checks may go to the servers directly** (`references/workload/clients.md`). Actions never do.
+- **Actions always go through the clients.** The few uses of a direct server connection are in `references/workload/clients.md`.
 
 ## Keep rules fast
 
@@ -210,13 +214,14 @@ fn quiet_period(&self, tc: TestCase) {
         let _ = std::process::Command::new(bin).arg(QUIET.as_secs().to_string()).status();
     }
     // Restarted containers take a while to come back. Retry each node until it serves,
-    // or until DEADLINE. With client containers, wait for them too.
+    // or until DEADLINE. With client containers, also send a real request through each,
+    // so a client wedged after faults doesn't count as recovered.
     let healthy: Vec<bool> = self.wait_for_nodes(DEADLINE);
     assert_sometimes!(!healthy.contains(&false), "the system recovered after faults stopped", &json!({"healthy": healthy}));
 }
 ```
 
-`wait_for_nodes` and `wait_until_ready` can share one per-node check; the quiet period stops at `DEADLINE`.
+`wait_for_nodes` and `wait_until_serving` can share one per-node check; the quiet period stops at `DEADLINE`.
 
 Clock faults continue during a pause, so allow for clock jumps. To test a quiet period locally, set its probability to 1.
 

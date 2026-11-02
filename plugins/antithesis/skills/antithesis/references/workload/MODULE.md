@@ -18,7 +18,7 @@ The SUT itself is built with Antithesis coverage instrumentation.
 2. **Pick the model.** For every in-scope item, decide what the driver must record so an assertion can judge each response.
 3. **Write the client program.** Follow `references/workload/clients.md`.
 4. **Instrument the SUT,** including the client library. Follow `references/workload/instrumentation.md`.
-5. **Write the driver,** including its startup: readiness wait, admin setup, setup complete and the `/workload-active` wait. Follow `references/workload/driver.md`.
+5. **Write the driver,** including its startup: the waits for the system, admin setup, setup complete and the `/workload-active` wait. Follow `references/workload/driver.md`.
 6. **Wire up the harness:** the `driver` container with its `first_` test command, the client containers, any shared volumes, and the fault exclusion. Follow `references/workload/harness.md`.
 7. **Build and validate.** Build the images, run the instrumentation checks, then run `snouty validate <config_dir>`. Commit every file the images build from, and check `git status --ignored`, since ignore rules can drop harness files.
 8. **Iterate locally** on coverage and the exploration assertions. Follow `references/workload/local-loop.md`.

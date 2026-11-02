@@ -10,7 +10,7 @@ For the full assertion API in each language, and the assertion catalog the SDK n
 - **`assert_sometimes!`**: something that must happen at least once per run, such as a leader being elected.
 - **Numeric and boolean forms** (`assert_always_some!` and the comparison forms): a condition that's a comparison or a combination. They tell Antithesis how close each check came to failing.
 
-Antithesis evaluates each assertion message as one property: keep it fixed, and put changing values and what you'd need to debug a failure in the details.
+Keep each message fixed ("Guiding exploration" in `references/workload/driver.md`), and put what you'd need to debug a failure in the details.
 
 ## Responses, against the model
 

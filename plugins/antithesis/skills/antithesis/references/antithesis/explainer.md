@@ -18,16 +18,17 @@ Antithesis is a simulation platform for finding bugs that traditional testing mi
 - **Event**: A record logged at a moment: output from the SUT (stdout or stderr), the Antithesis SDK, or an Antithesis built-in event such as faults.
 - **Driver**: The program that picks actions, sends them to the SUT, and checks the responses. One binary, the main process of its own container.
 - **Workload**: Everything added to the deployment to exercise the SUT. In this skill: the driver, the client programs that run the SUT's client library, and the forwarding of the SUT's logs to the driver.
-- **Property**: A guarantee about the system, as in property-based testing. Antithesis evaluates each property by searching the multiverse, then judging what it found, and reports it as passing or failing with examples (where it held) and counterexamples (where it didn't). Antithesis defines all properties; users can't write one directly.
-- **Default properties**: Built-in properties every run reports, such as `Software was instrumented`.
-- **Assertion**: An Antithesis SDK call, placed in the workload or the SUT. Each assertion type defines a generic property, and each assertion, identified by its message, is one instance of it. For example, an `Always` assertion's property passes if the assertion is hit at least once and its condition is true on every hit. Assertions are the only way to define a property, indirectly. A failing assertion doesn't stop the program.
+- **Property**: A guarantee about the system, as in property-based testing. Antithesis evaluates each property by searching the multiverse, then judging what it found, and reports it as passing or failing with examples (where it held) and counterexamples (where it didn't). Antithesis defines all properties; users can't write one.
+- **Assertion**: An Antithesis SDK call, placed in the workload or the SUT. Antithesis picks up every assertion, and its built-in SDK properties are defined over the assertions it sees, one per assertion type. Each assertion, identified by its message, is evaluated on its own: for example, the `Always` property passes for an assertion that is hit at least once and true on every hit. A failing assertion doesn't stop the program.
 - **Test command**: An executable that Antithesis runs in a container, found under `/opt/antithesis/test/v1/<test>/`. Its name prefix sets when it runs; a `first_` command runs once at the start of every timeline.
 - **Setup**: The start of a run, when the SUT and workload are deployed and made ready. It ends when the workload reports **setup complete**; Antithesis then snapshots the system, and every timeline starts from that snapshot.
 - **Config image**: A Docker image which contains orchestration code (docker compose config or k8s manifests) to run the SUT and workload in Antithesis.
 
 ## Test runs
 
-A launcher such as `basic_test`, built into every tenant, starts a test run. It deploys the Config image to the Antithesis fuzzer, which sets up the SUT and Workload and searches for property counterexamples, generating a multiverse.
+A launcher starts a test run. It deploys the Config image to the Antithesis fuzzer, which sets up the SUT and Workload and searches for property counterexamples, generating a multiverse.
+
+Every tenant has two default launchers: `basic_test` and `basic_k8s_test`. Tenants may have additional launchers.
 
 ## Debugger runs
 
@@ -35,7 +36,7 @@ A debugger run takes a source run and moment as input and rewarms it into a dete
 
 ## Run readiness
 
-Real-time commands such as `snouty runs exec`, `snouty runs search` and `snouty runs logs` work on any run while it is ready: status `in_progress:ready` in `snouty runs show`, or wait with `snouty runs wait --until ready`.
+snouty's run commands work on any ready run: status `in_progress:ready` in `snouty runs show`, or wait with `snouty runs wait --until ready`. All except `snouty runs exec` also work on completed runs. To exec at a moment when no run is ready, start a new test or debug run.
 
 ## snouty
 
