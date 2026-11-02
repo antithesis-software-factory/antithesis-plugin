@@ -8,6 +8,7 @@ See report.py for the environment settings every check follows.
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,15 +38,17 @@ def typos() -> int:
     result = run("typos", "--format", "json", capture_output=True)
     for line in result.stdout.splitlines():
         found = json.loads(line)
-        if found.get("type") == "typo":
-            fixes = " or ".join(f"`{c}`" for c in found["corrections"])
-            error(
-                "typos",
-                f"`{found['typo']}` should be {fixes}",
-                found["path"],
-                found["line_num"],
-                found["byte_offset"] + 1,
-            )
+        if found.get("type") != "typo":
+            continue
+        corrections = found.get("corrections")
+        if isinstance(corrections, list) and corrections:
+            message = f"`{found.get('typo')}` should be " + " or ".join(f"`{c}`" for c in corrections)
+        else:
+            message = f"`{found.get('typo')}` is a typo"
+        # A typo in a file name has no line: report it against the file.
+        line = found.get("line_num") or None
+        col = found["byte_offset"] + 1 if line and "byte_offset" in found else None
+        error("typos", message, found.get("path", "."), line, col)
     return result.returncode
 
 
@@ -123,7 +126,9 @@ def changelog() -> int:
     if not (ROOT / "CHANGELOG.md").exists():
         say("No CHANGELOG.md yet, so there is nothing to check")
         return 0
-    if run("gh", "release", "view", f"v{version}", capture_output=True).returncode == 0:
+    # Without gh, or when gh can't tell, treat the version as unreleased and check its notes.
+    has_gh = shutil.which("gh") is not None
+    if has_gh and run("gh", "release", "view", f"v{version}", capture_output=True).returncode == 0:
         say(f"v{version} is already released")
         return 0
     status = run(
