@@ -4,12 +4,13 @@ Input: a system to test in Antithesis, and optionally the behaviors to focus on.
 
 ## What a workload is
 
-- **A driver.** One Rust binary written with [hegel](https://hegel.dev), using `#[hegel::main]`. It picks actions at random, has them sent to the system, and records each outcome in a model of what the system should contain. Every random choice comes from hegel, so Antithesis controls it.
-- **An instrumented system under test (SUT),** built with Antithesis coverage instrumentation.
-- **The system's logs, forwarded to the driver,** which parses them into each node's state.
-- **Client containers** that run the system's real client library and are faulted like the servers. The driver tells them what to do. `references/workload/clients.md` says when to skip them.
+- **The driver.** One Rust binary written with [hegel](https://hegel.dev), using `#[hegel::main]`. It picks actions at random, has them sent to the system, and records each outcome in a model of what the system should contain. Every random choice comes from hegel, so Antithesis controls it.
+- **Client programs,** each in a client container faulted like the servers, that run the system's real client library and execute what the driver sends. `references/workload/clients.md` says when to skip them.
+- **Log forwarding:** the system's logs go to the driver, which parses them into each node's state.
 
-The driver binary is the main process of its own fault-excluded container. It waits for the system, reports setup complete, then waits for `/workload-active`, which the container's one `first_` test command creates when fuzzing starts. All workload logic stays in the driver.
+The driver binary is the main process of its own fault-excluded container. It waits for the system, reports setup complete, then waits for `/workload-active`, which the container's one `first_` test command creates when fuzzing starts. Every decision is made in the driver.
+
+The SUT itself is built with Antithesis coverage instrumentation.
 
 ## Steps
 

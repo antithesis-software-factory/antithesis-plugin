@@ -8,7 +8,7 @@ Not every property has moments. Telemetry and meta properties, such as `Hypervis
 
 Use the counts on the `Examples` line to prioritize:
 
-- **All failing (0 passing)** — likely a setup or workload bug: the property is violated in every history.
+- **All failing (0 passing)** — likely a setup or workload bug: the property is violated in every timeline.
 - **Mostly failing with rare passes** — most likely a setup or workload bug, or the system under test isn't set up for Antithesis. Check the Antithesis documentation.
 - **Mostly passing with rare failures** — strong candidate for a real SUT bug. Look for rare event orderings or fault patterns in the logs.
 - **Roughly even split** — the property may be sensitive to configuration or timing. Check whether failing correlates with fault intensity or with a choice made at the start of the history, such as which test or parameters it ran.
