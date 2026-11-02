@@ -100,19 +100,22 @@ run = "scripts/token-report"
 # Change the defaults here, or override one run: MODULE_TOKEN_BUDGET=12000 mise run check.
 env.SKILL_TOKEN_BUDGET = "{{ get_env(name='SKILL_TOKEN_BUDGET', default='2000') }}"
 env.MODULE_TOKEN_BUDGET = "{{ get_env(name='MODULE_TOKEN_BUDGET', default='10000') }}"
+# tiktoken downloads its encoding once. Keep it out of $TMPDIR, so it survives a
+# reboot and the check keeps working offline.
+env.TIKTOKEN_CACHE_DIR = "{{ get_env(name='XDG_CACHE_HOME', default=env.HOME ~ '/.cache') }}/tiktoken"
 
 [tasks."check:lychee"]
 description = "Check links (only local ones when CHECK_OFFLINE is set)"
 shell = "bash -euo pipefail -c"
 run = '''
-verbose=()
-[ -n "${CHECK_VERBOSE:-}" ] && verbose=(--verbose)
+# Not an array: bash before 4.4 (macOS) rejects an empty "${array[@]}" under set -u.
+verbose=${CHECK_VERBOSE:+--verbose}
 if [ -n "${CHECK_OFFLINE:-}" ]; then
-  lychee --no-progress --offline "${verbose[@]}" .
+  lychee --no-progress --offline $verbose .
 elif [ -n "${GITHUB_ACTIONS:-}" ]; then
   # The JSON report has every finding to annotate, and with --verbose every success too.
   status=0
-  lychee --no-progress "${verbose[@]}" --format json --output lychee.json . || status=$?
+  lychee --no-progress $verbose --format json --output lychee.json . || status=$?
   if [ -n "${CHECK_VERBOSE:-}" ]; then
     jq -r --arg root "$PWD/" '[.success_map, .redirect_map, .excluded_map, .error_map] | map(to_entries[]?) | .[] |
       .key as $file | .value[] | "[\(.status.text)] \(.url) (\($file | ltrimstr($root) | ltrimstr("./")):\(.span.line // "?"))"' lychee.json
@@ -122,7 +125,7 @@ elif [ -n "${GITHUB_ACTIONS:-}" ]; then
   rm lychee.json
   exit $status
 else
-  lychee --no-progress "${verbose[@]}" .
+  lychee --no-progress $verbose .
 fi
 '''
 
@@ -154,8 +157,15 @@ fi
 '''
 
 [tasks."check:schema"]
-description = "The Agent Plugins manifest matches its schema"
-run = 'check-jsonschema ${CHECK_VERBOSE:+-vv} --schemafile https://agent-plugins.org/schemas/1.0.0/plugin.schema.json plugins/antithesis/plugin.json'
+description = "The Agent Plugins manifest matches its schema (skipped when CHECK_OFFLINE is set)"
+shell = "bash -euo pipefail -c"
+run = '''
+if [ -n "${CHECK_OFFLINE:-}" ]; then
+  echo "Skipped offline: the schema is downloaded. CI validates it."
+  exit 0
+fi
+check-jsonschema ${CHECK_VERBOSE:+-vv} --schemafile https://agent-plugins.org/schemas/1.0.0/plugin.schema.json plugins/antithesis/plugin.json
+'''
 
 [tasks."check:plugin"]
 description = "Claude Code validates the marketplace and plugin"

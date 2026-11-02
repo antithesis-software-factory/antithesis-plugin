@@ -23,7 +23,7 @@ jobs:
       - id: list
         run: echo "checks=$(mise tasks ls --json | jq -c '[.[].name | select(startswith("check:"))]')" >> "$GITHUB_OUTPUT"
 
-  check:
+  checks:
     needs: tasks
     name: ${{ matrix.task }}
     runs-on: ubuntu-latest
@@ -50,6 +50,17 @@ jobs:
           TOKEN_BASE: ${{ github.event.pull_request.base.sha }}
           # Unprefixed output, so `::error` annotations start their lines.
           MISE_TASK_OUTPUT: interleave
+
+  # One stable check name for branch protection to require, whatever tasks exist.
+  check:
+    needs: checks
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every check passed
+        run: |
+          echo "checks: ${{ needs.checks.result }}"
+          [ "${{ needs.checks.result }}" = success ]
 
   # Users install from the default branch, and update when the version changes. A merged
   # release PR changes the version, so this releases it.
