@@ -8,9 +8,9 @@ For the full assertion API in each language, and the assertion catalog the SDK n
 - **`assert_always_or_unreachable!`**: the same, on a path rare enough that it may never run. Use it only where `assert_always!` would fail just because the check wasn't reached.
 - **`assert_unreachable!`**: something that must never happen.
 - **`assert_sometimes!`**: something that must happen at least once per run, such as a leader being elected.
-- **Numeric and boolean forms** (`assert_always_some!` and the comparison forms): a property that's a comparison or a combination. They tell Antithesis how close each check came to failing.
+- **Numeric and boolean forms** (`assert_always_some!` and the comparison forms): a condition that's a comparison or a combination. They tell Antithesis how close each check came to failing.
 
-Each message is one property in Antithesis: keep it fixed, and put changing values and what you'd need to debug a failure in the details.
+Antithesis evaluates each assertion message as one property: keep it fixed, and put changing values and what you'd need to debug a failure in the details.
 
 ## Responses, against the model
 

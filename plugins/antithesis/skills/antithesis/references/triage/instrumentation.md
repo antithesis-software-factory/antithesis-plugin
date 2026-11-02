@@ -10,7 +10,7 @@ snouty runs properties --detail --name "every instrumented module has symbols" "
 snouty runs properties --detail --name "thread pausing was enabled" "${RUN_ID}"
 ```
 
-All three are meta properties: their examples carry values, not moments.
+All three are default properties: their examples carry values, not moments.
 
 Each `Software was instrumented` example is one instrumented module that loaded during the run:
 

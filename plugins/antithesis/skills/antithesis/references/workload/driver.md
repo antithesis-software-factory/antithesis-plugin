@@ -139,7 +139,7 @@ fn main(tc: TestCase) {
 - **Use Antithesis SDK assertions, never panics.** Put the values you'd need to debug in the details.
 - **Generate only.** Keep `phases = [hegel::Phase::Generate]` on `#[hegel::main]`.
 - **Cover the surface you mapped.** Draw options; don't hard-code the common case.
-- **Let requests contend.** Don't serialize requests per key to keep the model simple. Record when each request was sent and when its outcome arrived, so a property can allow every outcome consistent with what overlapped it. If the system orders operations itself (log positions, sequence numbers), record that order too.
+- **Let requests contend.** Don't serialize requests per key to keep the model simple. Record when each request was sent and when its outcome arrived, so an assertion can allow every outcome consistent with what overlapped it. If the system orders operations itself (log positions, sequence numbers), record that order too.
 - **Record unknown outcomes as unknown.** A request that timed out or lost its connection may or may not have taken effect, now or later.
 
 ## Driving client containers
@@ -166,7 +166,7 @@ With client containers (`references/workload/clients.md`), also:
 
 ## Guiding exploration
 
-The workload's own assertions mark states worth reaching. They show which situations happened, where coverage shows only which code ran, and Antithesis explores from them. Their failure means the workload never reached that state. Properties are separate: a property says what the system must do, its failure is a bug, and it comes from the properties module (`references/properties/MODULE.md`).
+The workload's own assertions mark states worth reaching. They show which situations happened, where coverage shows only which code ran, and Antithesis explores from them. Their failure means the workload never reached that state, not that the system broke a guarantee. Assertions for the system's guarantees come from the properties module (`references/properties/MODULE.md`).
 
 - **`assert_sometimes!`**: a situation that should happen at least once per run, such as a leader election, a transaction abort, a read returning another client's write, or two clients editing the same document at once. If a situation and its opposite are both possible, add one for each.
 - **`assert_reachable!`**: code that should run at least once.

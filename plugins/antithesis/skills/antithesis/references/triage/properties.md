@@ -2,7 +2,7 @@
 
 Read `snouty runs properties --help` first. `snouty runs properties "${RUN_ID}" --detail` lists each property with its example and counterexample counts and a few sample moments. The counts on the `Examples` line cover every history in the run; the moments are only a sample.
 
-Not every property has moments. Telemetry and meta properties, such as `Hypervisor utilization`, `Customer output volume`, `Fault injector total packets`, `Symbols were uploaded`, `Assertions are present in customer code`, `Fuzzing has branches`, `Unique Edges` and `The Test Composer was used`, report a value instead: a scalar or a summary object such as `{session_id, total_output_mb, ...}`. They have no log to download. Report the counterexample value as the evidence.
+Not every property has moments. Some default properties, such as `Hypervisor utilization`, `Customer output volume`, `Fault injector total packets`, `Symbols were uploaded`, `Assertions are present in customer code`, `Fuzzing has branches`, `Unique Edges` and `The Test Composer was used`, report a value instead: a scalar or a summary object such as `{session_id, total_output_mb, ...}`. They have no log to download. Report the counterexample value as the evidence.
 
 ## Pass/fail ratios
 
@@ -15,16 +15,16 @@ Use the counts on the `Examples` line to prioritize:
 
 ## Assertion types
 
-The assertion type behind a property determines what a failure tells you:
+Every property that isn't a default property comes from an assertion, and its type determines what a failure tells you:
 
-- **`Always`**: fails if the condition is false at least once.
+- **`Always`**: fails if the condition is false at least once, or the assertion is never reached.
 - **`AlwaysOrUnreachable`**: fails if reached and false at least once. A rare or optional path was exercised and the invariant didn't hold; that the path was reached is itself informative.
-- **`Sometimes`**: fails if the condition is never true in the run.
+- **`Sometimes`**: fails if the condition is never true in the run, including when the assertion is never reached.
 - **`Reachable`**: fails if never reached. Could be a coverage gap, a workload that never triggers the state, or a SUT bug that blocks the path.
 - **`Unreachable`**: fails if reached at least once. A forbidden path was entered.
 
 On an `in_progress` run, only these results are final: `Always`, `AlwaysOrUnreachable` or `Unreachable` failing, and `Sometimes` or `Reachable` passing. The rest settle when the run completes.
 
-`Always` and `Sometimes` assertions imply `Reachable`. A failing `Reachable` with no examples was never reached: the run may have been too short, the workload may not trigger the state, or a SUT bug may block it (ideally another property catches that bug).
+A failing `Always`, `Sometimes` or `Reachable` with no examples was never reached: the run may have been too short, the workload may not trigger the state, or a SUT bug may block it (ideally another property catches that bug).
 
 Numeric and boolean variants (e.g. `AlwaysGreaterThan`, `SometimesAll`) follow their base type's semantics and attach the compared operands to the assertion details.

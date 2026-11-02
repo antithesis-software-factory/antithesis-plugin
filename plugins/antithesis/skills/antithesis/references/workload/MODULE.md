@@ -15,7 +15,7 @@ The SUT itself is built with Antithesis coverage instrumentation.
 ## Steps
 
 1. **Map what the workload must reach.** Follow `references/workload/surface.md`.
-2. **Pick the model.** For every in-scope item, decide what the driver must record so a property can judge each response.
+2. **Pick the model.** For every in-scope item, decide what the driver must record so an assertion can judge each response.
 3. **Write the client program.** Follow `references/workload/clients.md`.
 4. **Instrument the SUT,** including the client library. Follow `references/workload/instrumentation.md`.
 5. **Write the driver,** including its startup: readiness wait, admin setup, setup complete and the `/workload-active` wait. Follow `references/workload/driver.md`.

@@ -4,7 +4,7 @@ The system's logs show what each node believes: who is leader, which term it's i
 
 ## 1. Find the log lines
 
-Find the log lines, at any level, that show each node's state: what the properties need, and the situations worth reaching. Turn on that level through the system's own configuration in `docker-compose.yaml`.
+Find the log lines, at any level, that show each node's state: what the assertions need, and the situations worth reaching. Turn on that level through the system's own configuration in `docker-compose.yaml`.
 
 Prefer lines that state current values over lines that announce a change. Some lines go missing (sent before the driver's port is bound, or dropped by the forwarder): a current-value line repairs the state on its next appearance, but a missed change announcement is lost for good.
 
@@ -76,7 +76,7 @@ impl NodeStates {
         }
 
         // `latest` mixes lines sent at different times: fine for guiding exploration,
-        // not for properties.
+        // not for checking guarantees.
         let nodes: Vec<&NodeState> = self.latest.values().collect();
         assert_sometimes!(nodes.iter().any(|n| n.role == "candidate"), "a node stands for election", &json!({}));
         assert_sometimes!(nodes.iter().any(|n| n.term != nodes[0].term), "nodes disagree on the term", &json!({}));
@@ -93,7 +93,7 @@ The assertions wait for `active`, or the first election would meet them in every
 ## 4. Rules
 
 - **Handle lines as they arrive,** in the receiving thread, not in rules. A rule runs late and misses short-lived states.
-- **Share state both ways.** Rules read the node states, for example to send reads to a lagging follower. Give the receiving thread the model too (behind an `Arc`), so properties that combine the logs with the model are checked when the line arrives. Never hold a model lock and the node-state lock at once: copy what you need from one, release it, then take the other.
+- **Share state both ways.** Rules read the node states, for example to send reads to a lagging follower. Give the receiving thread the model too (behind an `Arc`), so assertions that combine the logs with the model are checked when the line arrives. Never hold a model lock and the node-state lock at once: copy what you need from one, release it, then take the other.
 - **Don't depend on arrival order across nodes.** Keep each node's lines in `seq` order. The latest state of several nodes is a mix of times: use it only for sometimes assertions.
 - **Mark states worth exploring from** with sometimes assertions ("Guiding exploration" in `references/workload/driver.md`), especially combinations across nodes: a leader change while a follower lags, a node rejoining with a stale term. Use the numeric forms when there's a distance to the state.
 - **Assert that every kind of line you parse arrives,** with a reachable assertion per kind. Otherwise a changed format or a disabled log level looks like a quiet system.

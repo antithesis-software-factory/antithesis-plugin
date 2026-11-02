@@ -44,7 +44,7 @@ Read `references/triage/logs.md` before downloading any logs. Then:
 4. Cross-reference the log against the source code of the system under test and the workload.
 5. Work out the timeline of events that led up to the failure and its root cause.
 
-The property status and assertion text alone are not enough. Download and read the logs before concluding on any failure that has moments. If a property has a "details" section, use it: its author chose those fields to show the system's state at the failure.
+The property status and assertion text alone are not enough. Download and read the logs before concluding on any failure that has moments. If its assertion has details, use them: its author chose those fields to show the system's state at the failure.
 
 ## Diagnose an incomplete run
 
