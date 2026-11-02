@@ -1,6 +1,10 @@
 # `mise run check` runs every check, and `mise run fix` applies every automatic fix.
 # Each tool also has its own `check:<tool>` and, where it can fix, `fix:<tool>`.
 # Under GitHub Actions ($GITHUB_ACTIONS), checks print findings as annotations.
+# With CHECK_VERBOSE set, which GitHub Actions turns on, checks also say what they checked.
+
+[env]
+CHECK_VERBOSE = "{{ get_env(name='CHECK_VERBOSE', default=get_env(name='GITHUB_ACTIONS', default='')) }}"
 
 [tools]
 node = "24"
@@ -34,6 +38,10 @@ run = "mise run --jobs 1 --continue-on-error 'fix:*'"
 description = "Spell check"
 shell = "bash -euo pipefail -c"
 run = '''
+if [ -n "${CHECK_VERBOSE:-}" ]; then
+  echo "typos checks these files:"
+  typos --files | sed 's|^\./|  |'
+fi
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
   typos --format json | jq -r 'select(.type == "typo") |
     "::error file=\(.path | ltrimstr("./")),line=\(.line_num),col=\(.byte_offset + 1),title=typos::`\(.typo)` should be \(.corrections | map("`\(.)`") | join(" or "))"'
@@ -51,11 +59,11 @@ description = "Lint Markdown"
 shell = "bash -euo pipefail -c"
 run = '''
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
-  # path:line[:col] [error] MDxxx/alias description
+  # Print every line, and an annotation after each finding: path:line[:col] [error] MDxxx/alias description
   markdownlint-cli2 2>&1 | sed -nE \
+    -e 'p' \
     -e 's/^([^: ]+):([0-9]+):([0-9]+) (error |warning )?(MD[0-9]+\/[^ ]+) (.*)$/::error file=\1,line=\2,col=\3,title=\5::\6/p' \
-    -e 's/^([^: ]+):([0-9]+) (error |warning )?(MD[0-9]+\/[^ ]+) (.*)$/::error file=\1,line=\2,title=\4::\5/p' \
-    -e '/^Summary/p'
+    -e 's/^([^: ]+):([0-9]+) (error |warning )?(MD[0-9]+\/[^ ]+) (.*)$/::error file=\1,line=\2,title=\4::\5/p'
 else
   markdownlint-cli2
 fi
@@ -69,14 +77,19 @@ run = "markdownlint-cli2 --fix"
 description = "Validate skills against the Agent Skills spec"
 shell = "bash -euo pipefail -c"
 run = '''
-format=pretty
-[ -n "${GITHUB_ACTIONS:-}" ] && format=github
-skillcheck lint --fail-on warning --format "$format" plugins/antithesis/skills .agents/skills
+skills=(plugins/antithesis/skills .agents/skills)
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  # The github format prints only annotations, so print the full report first.
+  [ -n "${CHECK_VERBOSE:-}" ] && skillcheck lint --fail-on never --format pretty "${skills[@]}"
+  skillcheck lint --fail-on warning --format github "${skills[@]}"
+else
+  skillcheck lint --fail-on warning --format pretty "${skills[@]}"
+fi
 '''
 
 [tasks."check:references"]
 description = "Every referenced skill file exists, and every skill file is reachable"
-run = "scripts/check-references"
+run = 'scripts/check-references ${CHECK_VERBOSE:+--verbose}'
 
 [tasks."check:tokens"]
 description = "Report skill token counts, and enforce the SKILL.md and per-module budgets"
@@ -92,38 +105,57 @@ env.MODULE_TOKEN_BUDGET = "{{ get_env(name='MODULE_TOKEN_BUDGET', default='10000
 description = "Check links (only local ones when CHECK_OFFLINE is set)"
 shell = "bash -euo pipefail -c"
 run = '''
+verbose=()
+[ -n "${CHECK_VERBOSE:-}" ] && verbose=(--verbose)
 if [ -n "${CHECK_OFFLINE:-}" ]; then
-  lychee --no-progress --offline .
+  lychee --no-progress --offline "${verbose[@]}" .
 elif [ -n "${GITHUB_ACTIONS:-}" ]; then
+  # The JSON report has every finding to annotate, and with --verbose every success too.
   status=0
-  lychee --no-progress --format json . > lychee.json || status=$?
+  lychee --no-progress "${verbose[@]}" --format json --output lychee.json . || status=$?
+  if [ -n "${CHECK_VERBOSE:-}" ]; then
+    jq -r --arg root "$PWD/" '[.success_map, .redirect_map, .excluded_map, .error_map] | map(to_entries[]?) | .[] |
+      .key as $file | .value[] | "[\(.status.text)] \(.url) (\($file | ltrimstr($root) | ltrimstr("./")):\(.span.line // "?"))"' lychee.json
+  fi
   jq -r --arg root "$PWD/" '.error_map | to_entries[] | .key as $file | .value[] |
     "::error file=\($file | ltrimstr($root) | ltrimstr("./")),line=\(.span.line // 1),col=\(.span.column // 1),title=lychee::\(.url): \(.status.text)"' lychee.json
   rm lychee.json
   exit $status
 else
-  lychee --no-progress .
+  lychee --no-progress "${verbose[@]}" .
 fi
 '''
 
 [tasks."check:versions"]
 description = "Manifest versions agree"
-run = "scripts/set-version --check"
+shell = "bash -euo pipefail -c"
+run = '''
+scripts/set-version --check
+if [ -n "${CHECK_VERBOSE:-}" ]; then
+  echo "Every manifest is at version $(jq -r .version plugins/antithesis/plugin.json)"
+fi
+'''
 
 [tasks."check:changelog"]
 description = "A new version has changelog notes"
 shell = "bash -euo pipefail -c"
 run = '''
 version=$(jq -r .version plugins/antithesis/plugin.json)
+say() { if [ -n "${CHECK_VERBOSE:-}" ]; then echo "$@"; fi; }
 # Before the first release there is no CHANGELOG.md, and nothing to check.
-if [ -f CHANGELOG.md ] && ! gh release view "v$version" > /dev/null 2>&1; then
+if [ ! -f CHANGELOG.md ]; then
+  say "No CHANGELOG.md yet, so there is nothing to check"
+elif gh release view "v$version" > /dev/null 2>&1; then
+  say "v$version is already released"
+else
   scripts/changelog-section "$version" > /dev/null
+  say "CHANGELOG.md has notes for the unreleased v$version"
 fi
 '''
 
 [tasks."check:schema"]
 description = "The Agent Plugins manifest matches its schema"
-run = "check-jsonschema --schemafile https://agent-plugins.org/schemas/1.0.0/plugin.schema.json plugins/antithesis/plugin.json"
+run = 'check-jsonschema ${CHECK_VERBOSE:+-vv} --schemafile https://agent-plugins.org/schemas/1.0.0/plugin.schema.json plugins/antithesis/plugin.json'
 
 [tasks."check:plugin"]
 description = "Claude Code validates the marketplace and plugin"

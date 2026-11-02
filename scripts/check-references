@@ -6,7 +6,8 @@ Skills name their bundled files as paths from the skill root, usually in backtic
 fails when a referenced file doesn't exist, or when a bundled file can't be reached
 from SKILL.md by following references, at any depth.
 
-    scripts/check-references
+    scripts/check-references            report problems
+    scripts/check-references --verbose  also list each file reached and its references
 """
 import os
 import sys
@@ -15,6 +16,7 @@ from pathlib import Path
 from skills import BUNDLED_DIRS, ROOT, references, skills
 
 ANNOTATE = bool(os.environ.get("GITHUB_ACTIONS"))
+VERBOSE = "--verbose" in sys.argv[1:]
 
 
 def report(path: Path, line: int, message: str) -> None:
@@ -43,7 +45,12 @@ def check(skill_md: Path) -> int:
         reached.add(source)
         if source.suffix != ".md":
             continue
-        for line, target in sorted(set(references(source.read_text()))):
+        found = sorted(set(references(source.read_text())))
+        if VERBOSE:
+            print(f"{source.relative_to(ROOT)}: {len(found)} references")
+            for line, target in found:
+                print(f"  line {line}: {target}")
+        for line, target in found:
             path = skill / target
             if path.is_file():
                 queue.append(path)
