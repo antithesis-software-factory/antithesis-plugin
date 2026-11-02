@@ -2,7 +2,7 @@
 
 ## List the runs on the tenant
 
-Read `snouty runs list --help` first. List with `-n 200`:
+List with `-n 200`:
 
 ```sh
 snouty runs list -n 200 [OPTIONS]

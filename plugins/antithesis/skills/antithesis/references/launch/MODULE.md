@@ -2,8 +2,6 @@
 
 Input: a workload to run in Antithesis, and optionally the launcher, compute budget or other parameters to use.
 
-First read `snouty validate --help` and `snouty launch --help`. They document the options this module doesn't.
-
 ## Steps
 
 1. **Pick the workload.** Work out from context which workload to launch and where its config directory is. If it's unclear, ask.
