@@ -1,8 +1,8 @@
 # Report issues
 
-Report one issue for each root cause among the failed properties. Do not report multiple issues for the same root cause, even if multiple properties failed.
+Report one issue per root cause, even if several properties failed from it.
 
-By default, use the following format for reporting issues. If the user has specified a particular place or format of how to report issues, use that instead. If the user has not specified where to report issues, print the report in the session instead. The following format is written with GitHub in mind; adapt any GitHub-specific syntax for other destinations as appropriate.
+Use the destination and format the user specified. Without a format, use the one below; without a destination, print the report in the session. The format is written for GitHub; adapt its syntax for other destinations.
 
 Write for a maintainer who knows this codebase but not Antithesis or this run. Lead with what's wrong and where. Explain one representative occurrence in the code's terms. Put supporting evidence in a collapsed `<details>` block. Don't describe how you investigated.
 
@@ -33,9 +33,9 @@ Each `{placeholder}` is a slot to fill in.
 
 ## Reproducer
 
-Write a reproducer for the bug and put it in `{reproducer}`. A reproducer is code that the maintainer can run to reproduce the bug that does not involve Antithesis. Prose explanations or instructions are not reproducers. Run the reproducer and ensure it reproduces the bug before including it in the report. Don't commit it to the repository.
+Put a reproducer in `{reproducer}`: code the maintainer can run to reproduce the bug without Antithesis. Prose instructions are not reproducers. Run it and confirm it reproduces the bug before including it. Don't commit it to the repository.
 
-If writing a reproducer would be too hard, don't write one, and instead silently leave out the Reproducer section entirely.
+If a reproducer would be too hard to write, silently leave out the Reproduction section.
 
 ## Duplicates
 
@@ -57,4 +57,4 @@ If the bug already exists, edit the issue to add a bullet point to its `{duplica
 </details>
 ```
 
-and is only present if there are any duplicates, so you may have to create it. Do not include any content in each bullet other than the linked `{run_id}`.
+and is present only if there are duplicates, so you may have to create it. Each bullet holds only the linked `{run_id}`.

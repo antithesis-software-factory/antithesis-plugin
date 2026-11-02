@@ -1,33 +1,27 @@
 # Debugging with Antithesis
 
-## Run and Timeline selection
+Antithesis can run scripts at any Moment in the Multiverse. Start by choosing the moment(s) and run(s) to investigate.
 
-Antithesis provides a time travelling debug environment, which allows scripts to be run at arbitrary Moments in the Multiverse. When starting the debug process, first figure out which moment(s) and run(s) you want to investigate.
+## Finding moments
 
-If you are trying to debug a property failure, you can search Antithesis for passing and failing moments associated with the property using `snouty runs search`. On a live run, `snouty runs stream` gives counterexample moments as they happen. You can pull interesting moments from a timeline via `snouty runs logs`.
+For a property failure, find its passing and failing moments with `snouty runs search`. On a live run, `snouty runs stream` reports counterexample moments as they happen. `snouty runs logs` shows the moments along a timeline.
 
 ## Choosing a run to execute commands in
 
-Antithesis can execute a command in any run that is ready, however there is value in picking a run that already has the moment warm. Follow this policy when picking a run to execute commands in:
+Any ready run can execute commands, but a run that already has the moment warm saves rewarming time:
 
-1. The run must have status `in_progress` and sub-status `ready`. You can either use `snouty runs show` or `snouty runs wait --until ready` to check.
-2. Prefer runs that already have rewarmed the desired moment. Use `snouty runs search <run_id> 'filter(ev => ev.moment.input_hash == "<hash>")' --count` to check. If that returns non-zero, all moments from the branch are warm.
-3. Prefer reusing a ready run over starting a new run.
-4. If there is no in_progress & ready run available, spin up a dedicated debug run using `snouty debug`.
+1. Prefer a ready run that has already rewarmed the moment. Check with `snouty runs search --count <run_id> 'filter(ev => ev.moment.input_hash == "<hash>")'`; non-zero means every moment of that branch is warm.
+2. Prefer reusing a ready run over starting a new one.
+3. If no run is ready, start a debug run with `snouty debug`.
 
-Running commands does not prevent runs from exiting. If the run exits while you are debugging, follow the policy above to pick a new run and continue debugging.
+Executing commands doesn't keep a run alive. If the run exits while you debug, pick a new one with this policy and continue.
 
 ## Executing commands
 
-You can execute an arbitrary bash command at a given moment using `snouty runs exec`. This is a powerful tool for exploration and debugging.
+Run a bash command at a moment with `snouty runs exec`.
 
-The command runs in the workload's containers inside the run, not on your machine. It can use only the tools installed in those images, which may not match what you have locally. Process its output on your machine instead, if the tool you need isn't there.
-
-As part of its output, `snouty runs exec` prints an "end moment", which is the moment where the command finished executing. You can use this moment to execute follow-up commands in the same timeline.
-
-Additional moments from any run (source run or otherwise) may be loaded into an existing run via the `--source-run-id` parameter to `snouty runs exec`. Rewarming a moment takes time relative to the deepness of a moment - hence a moment at vtime 10 will be faster to rewarm than a moment at vtime 100.
-
-- Use `--container <name>` to execute the command inside that container. This does not currently support `k8s` pods, use `kubectl` for that.
-- Use `--events` to print out all events that happen in the simulation while the command executes (rather than just stdout/stderr of the command).
-
-You can combine `--events` with eg `sleep 30`, to see what the system does in those 30 seconds. A nice trick is to do this after performing some action, like killing a container, to see the result of that action on the system.
+- **With `--container <name>`,** the command runs in that container and can use the tools in its image. The workload's images are under your control, so add any tool you need there.
+- **Without `--container`,** it runs in the guest: the virtual machine in Antithesis's deterministic hypervisor that runs every container or Kubernetes manifest. You can't change its tools, but it has the basics, such as bash and the usual shell commands, `podman` and `kubectl`. Use it for Kubernetes pods, which `--container` doesn't support.
+- If a tool is missing in either place, process the output on your machine.
+- Rewarming a deep moment takes longer: a moment at vtime 10 rewarms faster than one at vtime 100.
+- To see how the system reacts to an action, such as killing a container, run `sleep 30` with `--events` from the action's end moment.

@@ -1,6 +1,6 @@
 # Instrumentation triage
 
-Use this guide to verify that the system under test (SUT) and the workload are instrumented and that their symbols are registered. Without instrumentation and symbols, Antithesis cannot do coverage-guided fuzzing or thread pausing. This limits how much of the system Antithesis can test. Treat missing instrumentation as a setup problem.
+Use this guide to verify that the system under test (SUT) and its client programs are instrumented and that their symbols are registered. Without instrumentation and symbols, Antithesis cannot do coverage-guided fuzzing or thread pausing. This limits how much of the system Antithesis can test. Treat missing instrumentation as a setup problem.
 
 ## Step 1: check the setup properties
 
@@ -10,7 +10,7 @@ snouty runs properties --detail --name "every instrumented module has symbols" "
 snouty runs properties --detail --name "thread pausing was enabled" "${RUN_ID}"
 ```
 
-All three are meta properties. Their examples carry values, not moments, so there is no log to download.
+All three are default properties: their examples carry values, not moments.
 
 Each `Software was instrumented` example is one instrumented module that loaded during the run:
 
@@ -32,7 +32,7 @@ For Java, Python and .NET, also check the properties whose names contain `paths 
 
 ## Step 2: compare against the expected binaries
 
-The setup normally instruments the SUT binaries and the workload binary. Build the expected list from the source code when you have access to it — the harness and build files show which binaries the setup instruments. Without source access, infer the list from the user's request, the run description, and the containers in the run.
+The setup normally instruments the SUT binaries, including any client programs that run the system's client library. Whether the workload's own binaries are instrumented depends on its build. Build the expected list from the source code when you have access to it — the harness and build files show which binaries the setup instruments. Without source access, infer the list from the user's request, the run description, and the containers in the run.
 
 - **Any of these properties fails** — a significant finding: something is probably wrong with the instrumentation setup. Report a setup problem and link the [instrumentation documentation](https://antithesis.com/docs/instrumentation/).
 - **Every expected binary appears in a property** — instrumentation works. Report the modules and their `total_locations`.

@@ -1,0 +1,15 @@
+{
+  "name": "antithesis",
+  "owner": { "name": "Antithesis" },
+  "metadata": {
+    "description": "Antithesis plugin - write tests, triage runs, debug failures, and interact with Antithesis"
+  },
+  "plugins": [
+    {
+      "name": "antithesis",
+      "source": "plugins/antithesis",
+      "logo": "assets/logo.svg",
+      "category": "Developer Tools"
+    }
+  ]
+}
