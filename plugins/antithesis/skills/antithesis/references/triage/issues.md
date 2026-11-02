@@ -6,32 +6,34 @@ By default, use the following format for reporting issues. If the user has speci
 
 Write for a maintainer who knows this codebase but not Antithesis or this run. Lead with what's wrong and where. Explain one representative occurrence in the code's terms. Put supporting evidence in a collapsed `<details>` block. Don't describe how you investigated.
 
+Each `{placeholder}` is a slot to fill in.
+
 ```markdown
-# <title>
+# {title}
 
-<antithesis property name that failed>
+{failed_property_name}
 
-<description of bug>
+{bug_description}
 
 ## Reproduction
 
-<reproducer>
+{reproducer}
 
 ## Details
 
-* Antithesis run: [`<run id>`](<run link>)
-* Input hash: `<input hash>`
-* vtime: `<vtime>`
-* Version: <git hash>
+* Antithesis run: [`{run_id}`]({run_link})
+* Input hash: `{input_hash}`
+* vtime: `{vtime}`
+* Version: {git_hash}
 
-<duplicate_details>
+{duplicate_details}
 ```
 
-<run link> is `https://<tenant>.antithesis.com/run?run_id=<run id>`, with the tenant from `snouty settings show`.
+`{run_link}` is `https://{tenant}.antithesis.com/run?run_id={run_id}`, with the tenant from `snouty settings show`.
 
 ## Reproducer
 
-Write a reproducer for the bug and put it in <reproducer>. A reproducer is code that the maintainer can run to reproduce the bug that does not involve Antithesis. Prose explanations or instructions are not reproducers. Run the reproducer and ensure it reproduces the bug before including it in the report. Don't commit it to the repository.
+Write a reproducer for the bug and put it in `{reproducer}`. A reproducer is code that the maintainer can run to reproduce the bug that does not involve Antithesis. Prose explanations or instructions are not reproducers. Run the reproducer and ensure it reproduces the bug before including it in the report. Don't commit it to the repository.
 
 If writing a reproducer would be too hard, don't write one, and instead silently leave out the Reproducer section entirely.
 
@@ -39,9 +41,9 @@ If writing a reproducer would be too hard, don't write one, and instead silently
 
 Search the destination for existing issues before reporting.
 
-If the bug already exists, edit the issue to add a bullet point to its <duplicate_details>.
+If the bug already exists, edit the issue to add a bullet point to its `{duplicate_details}`.
 
-<duplicate_details> has the following format:
+`{duplicate_details}` has the following format:
 
 ```markdown
 ## Other Antithesis runs
@@ -49,10 +51,10 @@ If the bug already exists, edit the issue to add a bullet point to its <duplicat
 <details><summary>Details</summary>
 <p>
 
-* [`run id`](run link)
+* [`{run_id}`]({run_link})
 
 </p>
 </details>
 ```
 
-and is only present if there are any duplicates, so you may have to create it. Do not include any content in each bullet other than the linked `run id`.
+and is only present if there are any duplicates, so you may have to create it. Do not include any content in each bullet other than the linked `{run_id}`.

@@ -21,7 +21,7 @@ Apply these rules, in order.
    ```
 
 2. The user may ask for "the latest run" or "the run where we were trying
-   <xxx>". Consult `snouty runs` if this is not in your context. You can also
+   the new retry logic". Consult `snouty runs` if this is not in your context. You can also
    consider the description of the runs returned in the run list to identify a
    run the user is asking for. Take into account the webhooks and sources you
    have been using with this user. See the notes below.
