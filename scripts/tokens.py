@@ -6,8 +6,8 @@ MODULE.md adds on demand: everything reachable from it, up to another module's
 MODULE.md, that the top level doesn't already load. Each budget comes from the
 environment, and mise.toml sets both:
 
-    SKILL_TOKEN_BUDGET   (default 2000)
-    MODULE_TOKEN_BUDGET  (default 10000)
+    SKILL_TOKEN_BUDGET   (default 2500)
+    MODULE_TOKEN_BUDGET  (default 15000)
     TOKEN_BASE           a git ref: also show the change since it
 
 Counts use tiktoken's o200k_base encoding. Claude's tokenizer differs, so treat them
@@ -108,8 +108,8 @@ def table(headers: list[str], rows: list[list[str]]) -> list[str]:
 
 
 def main() -> int:
-    skill_budget = int(os.environ.get("SKILL_TOKEN_BUDGET", "2000"))
-    module_budget = int(os.environ.get("MODULE_TOKEN_BUDGET", "10000"))
+    skill_budget = int(os.environ.get("SKILL_TOKEN_BUDGET", "2500"))
+    module_budget = int(os.environ.get("MODULE_TOKEN_BUDGET", "15000"))
     encoding = tiktoken.get_encoding("o200k_base")
     now = Tree(encoding)
     base = Tree(encoding, os.environ.get("TOKEN_BASE", "").strip() or None)

@@ -1,8 +1,8 @@
-# Iterating locally
+# Iterate locally
 
 ## 1. Build the system for coverage
 
-Antithesis instrumentation records nothing outside Antithesis, so use the language's own coverage. Add a `docker-compose.coverage.yaml` that overrides each system service with a coverage Dockerfile and a shared `coverage` volume, one directory per service. Client containers count as system services: the client library is code under test.
+Antithesis instrumentation records nothing locally, so measure local coverage with the language's own tool. Add a `docker-compose.coverage.yaml` that overrides each system service with a coverage Dockerfile and a shared `coverage` volume, one directory per service. Client containers count as system services: the client library is code under test.
 
 ### Rust
 
@@ -11,7 +11,7 @@ Antithesis instrumentation records nothing outside Antithesis, so use the langua
 
 ### Go
 
-- Build with `go build -cover -covermode=atomic -coverpkg=./...`. Set `GOCOVERDIR=/coverage/<service>`.
+- Build with `go build -cover -covermode=atomic -coverpkg=./...`, and set `GOCOVERDIR=/coverage/<service>`.
 - Go writes counters only when `main` returns or the program calls `os.Exit`.
 
 ### Other languages
@@ -21,36 +21,37 @@ Antithesis instrumentation records nothing outside Antithesis, so use the langua
 
 ## 2. Run the workload
 
-In `docker-compose.coverage.yaml`, also set `ANTITHESIS_SDK_LOCAL_OUTPUT=/tmp/sdk.jsonl` on the driver, so it writes its assertions to a file.
-
-Locally, nothing runs `first_open_gate`, so the snapshot gate would never open. Have it open on `setup_complete` instead, which is what precedes it in Antithesis. In the same override, give the container that reports setup and the gate a shared `sdk` volume, point the reporter's output into it, and replace the gate's command:
+In `docker-compose.coverage.yaml`, also set `ANTITHESIS_SDK_LOCAL_OUTPUT` on the driver:
 
 ```yaml
-  setup:  # the container that reports setup_complete
+  driver:
     environment:
-      ANTITHESIS_SDK_LOCAL_OUTPUT: /sdk/setup.jsonl  # with an SDK; without one, ANTITHESIS_OUTPUT_DIR: /sdk
-    volumes: [sdk:/sdk]
-  snapshot-gate:
-    command: ["sh", "-c", "until grep -qs antithesis_setup /sdk/*.jsonl; do sleep 1; done"]
-    volumes: [sdk:/sdk]
-volumes:
-  sdk:
+      ANTITHESIS_SDK_LOCAL_OUTPUT: /tmp/sdk.jsonl
 ```
 
-`up` returns once the driver has started. Start the coverage build from scratch, let the driver run for a few minutes, then stop the system:
+The driver's SDK then writes its assertions and its setup-complete event, `{"antithesis_setup": {"status": "complete", ...}}`, to that file.
+
+Nothing runs test commands locally, so run the driver's first command yourself right after `up`, which also checks it. Running it before setup complete is fine.
+
+Start the coverage build from scratch, wait for setup complete, let the workload run for a few minutes, then stop the system. Run it as one command, since `COMPOSE_FILE` applies only within it:
 
 ```bash
-C="docker compose -f docker-compose.yaml -f docker-compose.coverage.yaml"
-$C down -v && $C up -d --build
+export COMPOSE_FILE=docker-compose.yaml:docker-compose.coverage.yaml
+docker compose down -v && docker compose up -d --build &&
+docker compose exec -T driver /opt/antithesis/test/v1/main/first_start_workload &&
+timeout 600 sh -c 'until docker compose exec -T driver grep -qs antithesis_setup /tmp/sdk.jsonl; do sleep 5; done' &&
 sleep 300
-$C cp driver:/tmp/sdk.jsonl .
-$C stop
+docker compose cp driver:/tmp/sdk.jsonl .
+docker compose stop
 ```
+
+If setup complete never arrives, the driver stopped in its startup. `docker compose logs driver`, with the same `COMPOSE_FILE`, shows what it was waiting for or which request failed.
 
 ## 3. Check the behavior
 
+- **Startup.** `the workload starts` was reached.
 - **Actions.** Every action reaches its intended outcome sometimes, and none is routinely slow.
-- **Assertions.** Only sometimes assertions for situations that need faults should be unmet. This lists every assertion that would fail in a run:
+- **Assertions.** Only sometimes assertions for situations that need faults are unmet. This lists every assertion that would fail in a run:
 
   ```bash
   jq -rs '[.[].antithesis_assert // empty] | group_by(.message)[]
@@ -61,14 +62,14 @@ $C stop
 
   An unmet sometimes assertion means the workload doesn't reach that situation: change the actions or their mix.
 - **Quiet periods.** One forced on finds the healthy system recovered.
-- **System logs.** All the logs that we expect to see, arrive.
-- **Shutdown.** `docker stop` on a system container shuts its process down rather than killing it.
+- **System logs.** Every kind of log line you expect arrives.
+- **Shutdown.** `docker stop` on a system container shuts its process down cleanly, without a kill.
 
 ## 4. Read the coverage
 
-After the system stops, use the language's coverage tool on the `coverage` volume to list the functions in the system's own source that never ran. E.g., `llvm-cov` for Rust, C and C++, and `go tool cover` for Go.
+After the system stops, run the language's coverage tool on the `coverage` volume, and list the functions in the system's own source that never ran: `llvm-cov` for Rust, C and C++, and `go tool cover` for Go.
 
-Error-handling and recovery code will look unreached without faults; leave it to the Antithesis runs.
+Error-handling and recovery code looks unreached without faults. Leave it to the Antithesis runs.
 
 ## 5. Close the gaps
 

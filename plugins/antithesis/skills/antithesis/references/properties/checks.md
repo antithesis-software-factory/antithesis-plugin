@@ -8,9 +8,9 @@ For the full assertion API in each language, and the assertion catalog the SDK n
 - **`assert_always_or_unreachable!`**: the same, on a path rare enough that it may never run. Use it only where `assert_always!` would fail just because the check wasn't reached.
 - **`assert_unreachable!`**: something that must never happen.
 - **`assert_sometimes!`**: something that must happen at least once per run, such as a leader being elected.
-- **Numeric and boolean forms** (`assert_always_some!` and the comparison forms): a property that's a comparison or a combination. They tell Antithesis how close each check came to failing.
+- **Numeric and boolean forms** (`assert_always_some!` and the comparison forms): a condition that's a comparison or a combination. They tell Antithesis how close each check came to failing.
 
-Each message is one property in Antithesis: keep it fixed, and put changing values and what you'd need to debug a failure in the details.
+Keep each message fixed ("Guiding exploration" in `references/workload/driver.md`), and put what you'd need to debug a failure in the details.
 
 ## Responses, against the model
 
@@ -43,7 +43,7 @@ assert_always!(
 
 ## Node state, from the logs
 
-Check as each line arrives, in `NodeStates::record` (`references/workload/system-logs.md`). Lines from different nodes arrive in any order, so check over everything seen, or over one node's lines in `seq` order, never over the latest state of several nodes. Add a `leaders: HashMap<u64, String>` field, the first leader seen in each term, then add the two checks to `record`, the second inside its existing out-of-order check:
+Check as each line arrives, in `NodeStates::record` (`references/workload/system-logs.md`). Lines from different nodes arrive in any order, so check over everything seen, or over one node's lines in `seq` order, never over the latest state of several nodes. Add a `leaders: HashMap<u64, String>` field, the first leader seen in each term, and initialize it to `HashMap::new()` in `NodeStates::new`. Put the leader check at the top of `record`, and the commit check inside its out-of-order check. Both run before the `active` guard, so they check boot too:
 
 ```rust
 if s.role == "leader" {

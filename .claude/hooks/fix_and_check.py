@@ -16,6 +16,8 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().parent.parent.parent)
 FAILED_TASK = re.compile(r"\[(check:[\w-]+)\] exited with status")
+# A finding: `path:line[:col]: message` or `path:line[:col] error ...`.
+LOCATION = re.compile(r"^\S+:\d+(:\d+)?[: ]")
 
 
 def mise(*args: str) -> subprocess.CompletedProcess[str]:
@@ -57,18 +59,24 @@ def main() -> int:
     if checked.returncode == 0:
         return 0
 
-    # Rerun just the failed checks, so their output isn't buried under the passing ones.
-    output = checked.stdout + checked.stderr
+    # Report only each failed check's findings (`path:line: message` lines), not its full
+    # output. Claude can run the check itself for more context.
+    # `mise run check` prefixes each subtask's lines with `[check] `.
+    output = "\n".join(
+        line.removeprefix("[check] ") for line in (checked.stdout + checked.stderr).splitlines()
+    )
+    failed = sorted(set(FAILED_TASK.findall(output)))
     sections = []
-    for task in sorted(set(FAILED_TASK.findall(output))):
-        rerun = mise("run", "--quiet", task)
-        lines = [
-            line
-            for line in (rerun.stdout + rerun.stderr).splitlines()
-            if not re.match(r"^\[[^]]+\] \$ ", line)
-        ]
-        sections.append(f"## mise run {task}\n" + "\n".join(lines[-40:]))
-    report = "\n\n".join(sections) or "\n".join(output.splitlines()[-40:])
+    for task in failed:
+        prefix = f"[{task}] "
+        lines = [line.removeprefix(prefix) for line in output.splitlines() if line.startswith(prefix)]
+        findings = [line for line in lines if LOCATION.match(line)]
+        if not findings:
+            findings = [line for line in lines if not line.startswith(("$ ", "ERROR"))][-5:]
+        sections.append(f"{task}:\n" + "\n".join(f"  {line}" for line in findings))
+    report = "\n".join(sections) or "\n".join(output.splitlines()[-10:])
+    rerun = " or ".join(f"`mise run {task}`" for task in failed) or "`mise run check`"
+    report += f"\n\nRun {rerun} for the full output."
 
     if hook_input.get("stop_hook_active"):
         return tell_user(f"`mise run check` still fails after Claude's attempt to fix it:\n\n{report}")

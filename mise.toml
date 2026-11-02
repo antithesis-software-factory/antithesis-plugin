@@ -63,9 +63,9 @@ run = "{{vars.check}} tokens"
 # Token budgets, estimated with tiktoken. The top level (SKILL.md and the files it
 # names outside any module) loads in every context that uses the skill, so keep it
 # small. A module is what its MODULE.md adds on demand, up to another module.
-# Change the defaults here, or override one run: MODULE_TOKEN_BUDGET=12000 mise run check.
-env.SKILL_TOKEN_BUDGET = "{{ get_env(name='SKILL_TOKEN_BUDGET', default='2000') }}"
-env.MODULE_TOKEN_BUDGET = "{{ get_env(name='MODULE_TOKEN_BUDGET', default='10000') }}"
+# Change the defaults here, or override one run: MODULE_TOKEN_BUDGET=20000 mise run check.
+env.SKILL_TOKEN_BUDGET = "{{ get_env(name='SKILL_TOKEN_BUDGET', default='2500') }}"
+env.MODULE_TOKEN_BUDGET = "{{ get_env(name='MODULE_TOKEN_BUDGET', default='15000') }}"
 # tiktoken downloads its encoding once. Keep it out of $TMPDIR, so it survives a
 # reboot and the check keeps working offline.
 env.TIKTOKEN_CACHE_DIR = "{{ get_env(name='XDG_CACHE_HOME', default=env.HOME ~ '/.cache') }}/tiktoken"

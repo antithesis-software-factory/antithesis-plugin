@@ -8,7 +8,7 @@ The `references/triage/` directory has detailed guides. Read each one only when 
 
 ## Find the run
 
-`snouty runs show <run_id>` gives the run's status and metadata.
+Get the run's status with `snouty runs show <run_id>`.
 
 - If the run can't be found, wait 10 seconds and retry. A run can take a while to appear in the API after it starts.
 - If the status is `starting`, wait for it with `snouty runs wait --until ready <run_id>`.
@@ -26,7 +26,7 @@ If no mode is given, use `monitor` for an `in_progress` run and `summary` for a 
 
 ## Read the properties
 
-`snouty runs properties <run_id> --detail` lists every property with its status, its pass and fail counts, and its example moments. Add `--failing` to list only the failing ones. Read `references/triage/properties.md` for the format, the assertion types, and what pass/fail ratios suggest.
+List the failing ones, with their moments, with `snouty runs properties <run_id> --failing --detail`. For an overview of every property, the table without `--detail` is enough. Read `references/triage/properties.md` for the assertion types and what pass/fail ratios suggest.
 
 If the run is `in_progress`, don't wait for it to finish. Follow `snouty runs stream --help` to get the current results and new ones as they arrive.
 
@@ -38,20 +38,20 @@ Also check the instrumentation properties, and include their status in your repo
 
 Read `references/triage/logs.md` before downloading any logs. Then:
 
-1. Pick the first failing example and find its moment. If the counterexample has no `moment` (telemetry and meta properties, see `references/triage/properties.md`), the counterexample value is the evidence; skip to step 4.
+1. Pick the first failing example and find its moment. If the counterexample has no `moment` (properties that report a value, see `references/triage/properties.md`), the counterexample value is the evidence; skip to step 4.
 2. Download the log for that moment and analyze it locally.
 3. If you aren't sure what caused the failure, find more moments for the same property with `snouty runs search -n 999` and compare their logs. Logs from passing examples are useful for finding what differs between success and failure.
 4. Cross-reference the log against the source code of the system under test and the workload.
 5. Work out the timeline of events that led up to the failure and its root cause.
 
-The property status and assertion text alone are not enough. Download and read the logs before concluding on any failure that has moments. If a property has a "details" section, use it: its author chose those fields to show the system's state at the failure.
+The property status and assertion text alone are not enough. Download and read the logs before concluding on any failure that has moments. If its assertion has details, use them: its author chose those fields to show the system's state at the failure.
 
 ## Diagnose an incomplete run
 
 An incomplete run can still have property results. Read them as for any run, and triage any failing properties as usual. Then:
 
-1. Look for `Failure Hash`, `Failure VTime` and `Failure Reason` in `snouty runs show <run_id>`. If there is a failure moment, download a log for it as described in `references/triage/logs.md`.
-2. Get the build logs with `snouty runs build-logs <run_id>`, especially if there is no failure moment, and look for errors.
+1. If `snouty runs show <run_id>` gives a failure moment, download its log (`references/triage/logs.md`). Use its failure reason, if any, as a lead.
+2. Look for errors in `snouty runs build-logs <run_id>`, especially if there is no failure moment.
 
 ## Report
 

@@ -2,32 +2,27 @@
 
 Input: a system to test in Antithesis, and optionally the behaviors to focus on.
 
-## How the workload is structured
+## What a workload is
 
-Every workload this module builds has these parts:
+- **The driver.** One Rust binary written with [hegel](https://hegel.dev), using `#[hegel::main]`. It picks actions at random, has them sent to the system, and records each outcome in a model of what the system should contain. Every random choice comes from hegel, so Antithesis controls it.
+- **Client programs,** each in a client container faulted like the servers, that run the system's real client library and execute what the driver sends. `references/workload/clients.md` says when to skip them.
+- **Log forwarding:** the system's logs go to the driver, which parses them into each node's state.
 
-- **One driver.** A Rust binary written with [hegel](https://hegel.dev) using `#[hegel::main]`. It picks actions at random, has them sent to the system, and records each outcome in a model of what the system should contain. Use hegel for all random choices, so Antithesis controls them.
-- **An instrumented SUT.** Instrument the system under test with Antithesis coverage instrumentation.
-- **The system's logs, forwarded to the driver.** Each system container's logs are forwarded to the driver, which parses them into each node's state.
-- **Its own container.** The driver runs alone in a container excluded from faults, so it can always act and see everything.
-- **Started by a snapshot gate.** The driver is its container's main process, and that container waits for a snapshot-gate container. Antithesis opens the gate at the start of each timeline, after the system reports `setup_complete`.
+The driver binary is the main process of its own fault-excluded container. It waits for the system, reports setup complete, then waits for `/workload-active`, which the container's one `first_` test command creates when fuzzing starts. Every decision is made in the driver.
 
-The system's real client library runs in client containers that are faulted like the servers, and the driver tells them what to do. Skip them only if the system has no client library, or its client keeps nothing between requests. See `references/workload/clients.md`.
-
-The driver never exits on its own. Antithesis decides how long each timeline runs.
+The SUT itself is built with Antithesis coverage instrumentation.
 
 ## Steps
 
 1. **Map what the workload must reach.** Follow `references/workload/surface.md`.
-2. **Pick the model** for every in-scope item: what it must record for a property to judge each response.
-3. **Instrument the SUT**, including the client library. Follow `references/workload/instrumentation.md`.
-4. **Report setup complete** from the system's containers, once it can serve requests. See `references/workload/harness.md`.
-5. **Write the client program.** Follow `references/workload/clients.md`.
-6. **Write the driver.** Follow `references/workload/driver.md`.
-7. **Wire up the harness.** Add the `driver` container, the snapshot gate, the client containers, and the fault exclusion. See `references/workload/harness.md`.
-8. **Build and validate.** Build the images, run the instrumentation checks, then `snouty validate`. Commit every file the images build from: check `git status --ignored`, since ignore rules can drop harness files.
-9. **Iterate locally** on coverage and the exploration assertions. Follow `references/workload/local-loop.md`.
-10. **Forward the system's logs.** Follow `references/workload/system-logs.md`, then iterate locally again.
-11. **Iterate on short Antithesis runs.** Follow `references/workload/run-loop.md`.
-12. **Launch the final run** with `--max-compute-hours 24` on the standard tier (30 minutes of fuzzing). Follow `references/launch/MODULE.md`, and read the run with the triage module.
-13. **Report to the user**.
+2. **Pick the model.** For every in-scope item, decide what the driver must record so an assertion can judge each response.
+3. **Write the client program.** Follow `references/workload/clients.md`.
+4. **Instrument the SUT,** including the client library. Follow `references/workload/instrumentation.md`.
+5. **Write the driver,** including its startup: the waits for the system, admin setup, setup complete and the `/workload-active` wait. Follow `references/workload/driver.md`.
+6. **Wire up the harness:** the `driver` container with its `first_` test command, the client containers, any shared volumes, and the fault exclusion. Follow `references/workload/harness.md`.
+7. **Build and validate.** Build the images, run the instrumentation checks, then run `snouty validate <config_dir>`. Commit every file the images build from, and check `git status --ignored`, since ignore rules can drop harness files.
+8. **Iterate locally** on coverage and the exploration assertions. Follow `references/workload/local-loop.md`.
+9. **Forward the system's logs.** Follow `references/workload/system-logs.md`, then iterate locally again.
+10. **Iterate on short Antithesis runs.** Follow `references/workload/run-loop.md`.
+11. **Launch the final run** with `--max-compute-hours 24` on the standard tier. Follow `references/launch/MODULE.md` with the launcher and parameters in `references/workload/harness.md`, and read the run with the triage module.
+12. **Report to the user.**

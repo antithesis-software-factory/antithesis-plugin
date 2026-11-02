@@ -16,7 +16,7 @@ argument-hint: "[triage [monitor|summary|root-cause]|debug|workload|launch|prope
 
 ### Dependencies
 
-Every module needs these on your machine:
+Every module needs:
 
 - **snouty**, installed and configured for the Antithesis tenant. If it's missing or not configured, follow `references/antithesis/snouty-setup.md`.
 - **Docker or Podman, with Docker Compose.**
@@ -29,7 +29,7 @@ jq --version
 snouty doctor
 ```
 
-`snouty doctor` also checks the container runtime, Docker Compose and the connection to Antithesis. Continue only if `jq --version` succeeds and `snouty doctor` reports that all checks passed. Otherwise report what's missing, or the failing check, and stop.
+Continue only if `jq --version` succeeds and `snouty doctor` reports that all checks passed. Otherwise report what's missing, or the failing check, and stop.
 
 ## Modules
 
