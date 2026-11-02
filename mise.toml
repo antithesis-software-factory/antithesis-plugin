@@ -1,0 +1,108 @@
+# `mise run check` runs every check, and `mise run fix` applies every automatic fix.
+# Each tool also has its own `check:<tool>` and, where it can fix, `fix:<tool>`.
+# The checks live in scripts/check.py; scripts/report.py describes the settings they
+# follow (GitHub annotations, CHECK_VERBOSE, CHECK_OFFLINE). Python and its
+# dependencies come from uv, through pyproject.toml and uv.lock.
+
+[tools]
+node = "24"
+uv = "0.13.6"
+typos = "1.51.1"
+lychee = "0.24.2"
+"npm:markdownlint-cli2" = "0.24.0"
+# Low npm download count, so mise asks for explicit approval. Reviewed: no install scripts.
+"npm:@sagargupta1610/skillcheck" = { version = "0.2.10", allow_low_downloads = true }
+
+[settings]
+# Checks run in parallel; this keeps each tool's output together.
+task.output = "keep-order"
+
+[vars]
+check = "scripts/check.py"
+
+[task_config]
+dir = "{{config_root}}"
+
+[tasks.check]
+description = "Run every check"
+# --continue-on-error so one failure doesn't hide the rest.
+run = "mise run --continue-on-error 'check:*'"
+
+[tasks.fix]
+description = "Apply every automatic fix"
+# One at a time: fixers that rewrite the same file in parallel would lose each other's fixes.
+run = "mise run --jobs 1 --continue-on-error 'fix:*'"
+
+[tasks."check:typos"]
+description = "Spell check"
+run = "{{vars.check}} typos"
+
+[tasks."fix:typos"]
+description = "Fix unambiguous typos"
+run = "typos --write-changes"
+
+[tasks."check:markdownlint"]
+description = "Lint Markdown"
+run = "{{vars.check}} markdownlint"
+
+[tasks."fix:markdownlint"]
+description = "Fix Markdown lint that markdownlint can fix"
+run = "markdownlint-cli2 --fix"
+
+[tasks."check:skillcheck"]
+description = "Validate skills against the Agent Skills spec"
+run = "{{vars.check}} skillcheck"
+
+[tasks."check:references"]
+description = "Every referenced skill file exists, and every skill file is reachable"
+run = "{{vars.check}} references"
+
+[tasks."check:tokens"]
+description = "Report skill token counts, and enforce the top-level and per-module budgets"
+run = "{{vars.check}} tokens"
+# Token budgets, estimated with tiktoken. The top level (SKILL.md and the files it
+# names outside any module) loads in every context that uses the skill, so keep it
+# small. A module is what its MODULE.md adds on demand, up to another module.
+# Change the defaults here, or override one run: MODULE_TOKEN_BUDGET=12000 mise run check.
+env.SKILL_TOKEN_BUDGET = "{{ get_env(name='SKILL_TOKEN_BUDGET', default='2000') }}"
+env.MODULE_TOKEN_BUDGET = "{{ get_env(name='MODULE_TOKEN_BUDGET', default='10000') }}"
+# tiktoken downloads its encoding once. Keep it out of $TMPDIR, so it survives a
+# reboot and the check keeps working offline.
+env.TIKTOKEN_CACHE_DIR = "{{ get_env(name='XDG_CACHE_HOME', default=env.HOME ~ '/.cache') }}/tiktoken"
+
+[tasks."check:lychee"]
+description = "Check links (only local ones when CHECK_OFFLINE is set)"
+run = "{{vars.check}} lychee"
+
+[tasks."check:versions"]
+description = "Manifest versions agree"
+run = "{{vars.check}} versions"
+
+[tasks."check:changelog"]
+description = "A new version has changelog notes"
+run = "{{vars.check}} changelog"
+
+[tasks."check:schema"]
+description = "The Agent Plugins manifest matches its schema (skipped when CHECK_OFFLINE is set)"
+run = "{{vars.check}} schema"
+
+[tasks."check:plugin"]
+description = "Claude Code validates the marketplace and plugin"
+# A task-only tool, so the repo doesn't put a second `claude` on your PATH.
+tools = { claude = "2.1.316" }
+run = "{{vars.check}} plugin"
+
+[tasks."check:ruff"]
+description = "Lint and format-check the Python"
+run = "{{vars.check}} ruff"
+
+[tasks."fix:ruff"]
+description = "Fix Python lint that ruff can fix, and format the Python"
+run = [
+  "uv run --quiet --locked ruff check --fix",
+  "uv run --quiet --locked ruff format",
+]
+
+[tasks."check:pyright"]
+description = "Type-check the Python"
+run = "{{vars.check}} pyright"

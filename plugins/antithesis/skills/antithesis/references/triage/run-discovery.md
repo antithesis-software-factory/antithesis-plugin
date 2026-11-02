@@ -16,19 +16,19 @@ Apply these rules, in order.
 
 1. The user may provide a run id directly -- if so, use that. Here is an example run_id:
 
-```
-2c6fa5b630e543a92c98fbed4b555280-53-1
-```
+   ```text
+   2c6fa5b630e543a92c98fbed4b555280-53-1
+   ```
 
 2. The user may ask for "the latest run" or "the run where we were trying
-   <xxx>". Consult `snouty runs` if this is not in your context. You can also
+   the new retry logic". Consult `snouty runs` if this is not in your context. You can also
    consider the description of the runs returned in the run list to identify a
    run the user is asking for. Take into account the webhooks and sources you
    have been using with this user. See the notes below.
 
 3. If the user provides a link to a run, take the run_id from it. A run link looks like:
 
-   ```
+   ```text
    https://<TENANT_ID>.antithesis.com/run?run_id=<run_id>
    ```
 

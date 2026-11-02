@@ -1,11 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet --locked
 """Set or check the plugin version in every manifest.
 
 `plugins/antithesis/plugin.json` holds the canonical version.
 
-    scripts/set-version 1.2.3    write 1.2.3 into every manifest
-    scripts/set-version --check  exit 1 if a manifest disagrees with the canonical version
+    scripts/set-version.py 1.2.3    write 1.2.3 into every manifest
+    scripts/set-version.py --check  exit 1 if a manifest disagrees with the canonical version
 """
+
 import json
 import re
 import sys
@@ -29,7 +30,7 @@ def main() -> int:
             print(f"{path.relative_to(PLUGIN.parent.parent)}: version is not {expected}")
         return 1 if wrong else 0
     if len(sys.argv) != 2 or not re.fullmatch(r"\d+\.\d+\.\d+", sys.argv[1]):
-        print(__doc__.strip(), file=sys.stderr)
+        print((__doc__ or "").strip(), file=sys.stderr)
         return 2
     for path in MANIFESTS:
         text, count = VERSION.subn(rf"\g<1>{sys.argv[1]}\g<2>", path.read_text(), count=1)

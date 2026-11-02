@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && .claude/hooks/fix_and_check.py",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}
