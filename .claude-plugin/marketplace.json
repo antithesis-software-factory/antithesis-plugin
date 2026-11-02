@@ -1,6 +1,6 @@
 {
   "name": "antithesis",
   "owner": { "name": "Antithesis" },
-  "description": "Antithesis plugin - write tests, triage runs, debug failures, and interact with Antithesis",
+  "description": "Autonomous testing with Antithesis: Write tests, triage runs, and debug failures",
   "plugins": [{ "name": "antithesis", "source": "./plugins/antithesis" }]
 }
