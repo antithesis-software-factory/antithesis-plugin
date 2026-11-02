@@ -22,21 +22,27 @@ Run the system's command through it with `driver/forward-logs`, executable:
 
 ```bash
 #!/usr/bin/env bash
-# Run the system with its stderr through log-forward. Wait for log-forward to drain
-# before exiting, so the system's last lines, often a crash message, aren't lost.
+# Run the system with its stderr through log-forward, and pass signals on to it. Once it
+# exits, let log-forward drain for up to 5 s, so the last lines, often a crash message,
+# aren't lost, but a leftover child holding stderr can't keep the container up.
+set -m  # job control, so the system starts with SIGINT and SIGQUIT not ignored
 fifo=$(mktemp -u) && mkfifo "$fifo"
 log-forward < "$fifo" >&2 &
 forwarder=$!
 "$@" 2> "$fifo" &
 system=$!
-trap 'kill -TERM "$system" 2>/dev/null' TERM INT
+set +m
+for signal in TERM INT QUIT HUP USR1 USR2; do
+  trap "kill -$signal $system 2>/dev/null" "$signal"
+done
 while wait "$system"; status=$?; kill -0 "$system" 2>/dev/null; do :; done
+(sleep 5; kill "$forwarder" 2>/dev/null) &
 wait "$forwarder"
 rm -f "$fifo"
 exit "$status"
 ```
 
-The wrapper passes SIGTERM and SIGINT on to the system and exits with its status. If the system logs to stdout, send its stdout to the fifo (`> "$fifo"`) and the forwarder's output to stdout.
+The wrapper passes stop and reload signals on to the system unchanged, and exits with its status. If the system logs to stdout, send its stdout to the fifo (`> "$fifo"`) and the forwarder's output to stdout.
 
 In each system service's Antithesis Dockerfile, build the forwarder statically, so it runs on any base image, and put the wrapper, which needs bash, in front of the system's command:
 
