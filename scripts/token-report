@@ -42,6 +42,14 @@ def at_base(base: str, rel: str) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
+def base_files(base: str, skill_dir: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", base, "--", skill_dir],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    return [f for f in result.stdout.splitlines() if f.endswith(".md")]
+
+
 def delta(now: int, before: int | None) -> str:
     if before is None:
         return "new"
@@ -77,6 +85,14 @@ def main() -> int:
                     errors.append((rel, f"SKILL.md is {tokens} tokens; keep it under {MAX_TOKENS}"))
                 if line_count > MAX_LINES:
                     errors.append((rel, f"SKILL.md is {line_count} lines; keep it under {MAX_LINES}"))
+        if base:
+            # Files deleted or renamed since the base still count toward the change.
+            current = {p.relative_to(ROOT).as_posix() for p in files}
+            for rel in base_files(base, skill.relative_to(ROOT).as_posix()):
+                if rel not in current:
+                    before = count(at_base(base, rel)) or 0
+                    total_before += before
+                    lines.append(f"| `{Path(rel).relative_to(skill.relative_to(ROOT))}` (deleted) | 0 | {-before:+d} |")
         lines.append(f"| **Total** | **{total}** |" + (f" **{delta(total, total_before)}** |" if base else ""))
         lines.append("")
     report = "\n".join(lines)

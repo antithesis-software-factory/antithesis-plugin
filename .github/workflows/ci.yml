@@ -27,6 +27,8 @@ jobs:
     needs: tasks
     name: ${{ matrix.task }}
     runs-on: ubuntu-latest
+    # On main, an external link that's briefly down shouldn't block the release.
+    continue-on-error: ${{ github.event_name == 'push' && matrix.task == 'check:lychee' }}
     strategy:
       fail-fast: false
       matrix:

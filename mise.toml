@@ -27,7 +27,8 @@ run = "mise run --continue-on-error 'check:*'"
 
 [tasks.fix]
 description = "Apply every automatic fix"
-run = "mise run --continue-on-error 'fix:*'"
+# One at a time: fixers that rewrite the same file in parallel would lose each other's fixes.
+run = "mise run --jobs 1 --continue-on-error 'fix:*'"
 
 [tasks."check:typos"]
 description = "Spell check"
@@ -82,10 +83,12 @@ description = "Report skill token counts and enforce the SKILL.md budget"
 run = "scripts/token-report"
 
 [tasks."check:lychee"]
-description = "Check links"
+description = "Check links (only local ones when CHECK_OFFLINE is set)"
 shell = "bash -euo pipefail -c"
 run = '''
-if [ -n "${GITHUB_ACTIONS:-}" ]; then
+if [ -n "${CHECK_OFFLINE:-}" ]; then
+  lychee --no-progress --offline .
+elif [ -n "${GITHUB_ACTIONS:-}" ]; then
   status=0
   lychee --no-progress --format json . > lychee.json || status=$?
   jq -r --arg root "$PWD/" '.error_map | to_entries[] | .key as $file | .value[] |

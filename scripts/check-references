@@ -40,6 +40,7 @@ def references(path: Path):
 
 def check(skill_md: Path) -> int:
     skill = skill_md.parent
+    internal = skill.relative_to(ROOT).parts[0] == ".agents"
     bundled = {
         p.relative_to(skill).as_posix()
         for d in BUNDLED_DIRS
@@ -60,7 +61,8 @@ def check(skill_md: Path) -> int:
             if path.is_file():
                 queue.append(path)
             # A repo-internal skill may name the repo's own files, such as `scripts/set-version`.
-            elif not path.is_dir() and not (ROOT / target).exists():
+            # A shipped skill may not: its install has only what the skill bundles.
+            elif not path.is_dir() and not (internal and (ROOT / target).exists()):
                 report(source, line, f"`{target}` does not exist in skill `{skill.name}`")
                 problems += 1
     for rel in sorted(bundled - {p.relative_to(skill).as_posix() for p in reached}):
