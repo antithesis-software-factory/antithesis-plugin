@@ -1,7 +1,7 @@
 {
   "name": "antithesis",
   "version": "0.0.7",
-  "description": "Antithesis plugin - write tests, triage runs, debug failures, and interact with Antithesis",
+  "description": "Autonomous testing with Antithesis: Write tests, triage runs, and debug failures",
   "author": { "name": "Antithesis", "url": "https://antithesis.com" },
   "homepage": "https://antithesis.com",
   "repository": "https://github.com/antithesishq/antithesis-plugin",
