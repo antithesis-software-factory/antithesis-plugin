@@ -1,0 +1,37 @@
+# Python for this repo's own tooling: the checks under scripts/ and the Claude Code
+# hook under .claude/hooks/. Not a package; `uv run --locked` runs it in .venv, with
+# the exact versions in uv.lock.
+[project]
+name = "antithesis-plugin-tools"
+version = "0"
+requires-python = ">=3.14"
+dependencies = [
+    "check-jsonschema>=0.39.0",
+    "tiktoken>=0.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "ruff>=0.17.3",
+]
+
+[tool.uv]
+package = false
+# Always a uv-managed Python, at the version in .python-version.
+python-preference = "only-managed"
+
+[tool.ruff]
+line-length = 110
+extend-exclude = [".claude/worktrees"]
+
+[tool.ruff.lint]
+extend-select = ["B", "I", "UP", "SIM"]
+
+[tool.pyright]
+include = ["scripts", ".claude/hooks"]
+# The scripts import each other as top-level modules.
+extraPaths = ["scripts"]
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"

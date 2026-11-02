@@ -1,4 +1,6 @@
-# Customer setup
+# Antithesis in Replit
+
+## Customer setup
 
 * Add secrets:
   * `ANTITHESIS_API_KEY`
@@ -6,11 +8,11 @@
   * `ANTITHESIS_REPOSITORY` (GAR repository url)
   * `ANTITHESIS_GAR_KEY`
 
-  Either to a specific App (<App> -> Tools -> Secrets), or to your personal account (Profile -> Account secrets) and then linked to individual Apps.
+  Either to a specific App ({App} -> Tools -> Secrets), or to your personal account (Profile -> Account secrets) and then linked to individual Apps.
 * Add the plugin: Customization → Skills → Add.
   * If Add offers "Add from GitHub", enter:
 
-     ```
+     ```text
      https://github.com/antithesishq/antithesis-plugin/tree/main/plugins/antithesis/skills/antithesis
      ```
 
@@ -22,10 +24,10 @@
      (cd antithesis && zip -r ../antithesis.zip .)
      ```
 
-# Usage
+## Usage
 
 E.g.:
 
-```
+```text
 /antithesis "write a test for rqlite"
 ```
