@@ -1,25 +1,24 @@
 # `mise run check` runs every check, and `mise run fix` applies every automatic fix.
 # Each tool also has its own `check:<tool>` and, where it can fix, `fix:<tool>`.
-# Under GitHub Actions ($GITHUB_ACTIONS), checks print findings as annotations.
-# With CHECK_VERBOSE set, which GitHub Actions turns on, checks also say what they checked.
-
-[env]
-CHECK_VERBOSE = "{{ get_env(name='CHECK_VERBOSE', default=get_env(name='GITHUB_ACTIONS', default='')) }}"
+# The checks live in scripts/check.py; scripts/report.py describes the settings they
+# follow (GitHub annotations, CHECK_VERBOSE, CHECK_OFFLINE). Python and its
+# dependencies come from uv, through pyproject.toml and uv.lock.
 
 [tools]
 node = "24"
 uv = "0.13.6"
-jq = "1.8.2"
 typos = "1.51.1"
 lychee = "0.24.2"
 "npm:markdownlint-cli2" = "0.24.0"
 # Low npm download count, so mise asks for explicit approval. Reviewed: no install scripts.
 "npm:@sagargupta1610/skillcheck" = { version = "0.2.10", allow_low_downloads = true }
-"pipx:check-jsonschema" = "0.39.0"
 
 [settings]
 # Checks run in parallel; this keeps each tool's output together.
 task.output = "keep-order"
+
+[vars]
+check = "scripts/check.py"
 
 [task_config]
 dir = "{{config_root}}"
@@ -36,19 +35,7 @@ run = "mise run --jobs 1 --continue-on-error 'fix:*'"
 
 [tasks."check:typos"]
 description = "Spell check"
-shell = "bash -euo pipefail -c"
-run = '''
-if [ -n "${CHECK_VERBOSE:-}" ]; then
-  echo "typos checks these files:"
-  typos --files | sed 's|^\./|  |'
-fi
-if [ -n "${GITHUB_ACTIONS:-}" ]; then
-  typos --format json | jq -r 'select(.type == "typo") |
-    "::error file=\(.path | ltrimstr("./")),line=\(.line_num),col=\(.byte_offset + 1),title=typos::`\(.typo)` should be \(.corrections | map("`\(.)`") | join(" or "))"'
-else
-  typos --format brief
-fi
-'''
+run = "{{vars.check}} typos"
 
 [tasks."fix:typos"]
 description = "Fix unambiguous typos"
@@ -56,18 +43,7 @@ run = "typos --write-changes"
 
 [tasks."check:markdownlint"]
 description = "Lint Markdown"
-shell = "bash -euo pipefail -c"
-run = '''
-if [ -n "${GITHUB_ACTIONS:-}" ]; then
-  # Print every line, and an annotation after each finding: path:line[:col] [error] MDxxx/alias description
-  markdownlint-cli2 2>&1 | sed -nE \
-    -e 'p' \
-    -e 's/^([^: ]+):([0-9]+):([0-9]+) (error |warning )?(MD[0-9]+\/[^ ]+) (.*)$/::error file=\1,line=\2,col=\3,title=\5::\6/p' \
-    -e 's/^([^: ]+):([0-9]+) (error |warning )?(MD[0-9]+\/[^ ]+) (.*)$/::error file=\1,line=\2,title=\4::\5/p'
-else
-  markdownlint-cli2
-fi
-'''
+run = "{{vars.check}} markdownlint"
 
 [tasks."fix:markdownlint"]
 description = "Fix Markdown lint that markdownlint can fix"
@@ -75,25 +51,15 @@ run = "markdownlint-cli2 --fix"
 
 [tasks."check:skillcheck"]
 description = "Validate skills against the Agent Skills spec"
-shell = "bash -euo pipefail -c"
-run = '''
-skills=(plugins/antithesis/skills .agents/skills)
-if [ -n "${GITHUB_ACTIONS:-}" ]; then
-  # The github format prints only annotations, so print the full report first.
-  [ -n "${CHECK_VERBOSE:-}" ] && skillcheck lint --fail-on never --format pretty "${skills[@]}"
-  skillcheck lint --fail-on warning --format github "${skills[@]}"
-else
-  skillcheck lint --fail-on warning --format pretty "${skills[@]}"
-fi
-'''
+run = "{{vars.check}} skillcheck"
 
 [tasks."check:references"]
 description = "Every referenced skill file exists, and every skill file is reachable"
-run = 'scripts/check-references ${CHECK_VERBOSE:+--verbose}'
+run = "{{vars.check}} references"
 
 [tasks."check:tokens"]
-description = "Report skill token counts, and enforce the SKILL.md and per-module budgets"
-run = "scripts/token-report"
+description = "Report skill token counts, and enforce the top-level and per-module budgets"
+run = "{{vars.check}} tokens"
 # Token budgets, estimated with tiktoken. The top level (SKILL.md and the files it
 # names outside any module) loads in every context that uses the skill, so keep it
 # small. A module is what its MODULE.md adds on demand, up to another module.
@@ -106,72 +72,37 @@ env.TIKTOKEN_CACHE_DIR = "{{ get_env(name='XDG_CACHE_HOME', default=env.HOME ~ '
 
 [tasks."check:lychee"]
 description = "Check links (only local ones when CHECK_OFFLINE is set)"
-shell = "bash -euo pipefail -c"
-run = '''
-# Not an array: bash before 4.4 (macOS) rejects an empty "${array[@]}" under set -u.
-verbose=${CHECK_VERBOSE:+--verbose}
-if [ -n "${CHECK_OFFLINE:-}" ]; then
-  lychee --no-progress --offline $verbose .
-elif [ -n "${GITHUB_ACTIONS:-}" ]; then
-  # The JSON report has every finding to annotate, and with --verbose every success too.
-  status=0
-  lychee --no-progress $verbose --format json --output lychee.json . || status=$?
-  if [ -n "${CHECK_VERBOSE:-}" ]; then
-    jq -r --arg root "$PWD/" '[.success_map, .redirect_map, .excluded_map, .error_map] | map(to_entries[]?) | .[] |
-      .key as $file | .value[] | "[\(.status.text)] \(.url) (\($file | ltrimstr($root) | ltrimstr("./")):\(.span.line // "?"))"' lychee.json
-  fi
-  jq -r --arg root "$PWD/" '.error_map | to_entries[] | .key as $file | .value[] |
-    "::error file=\($file | ltrimstr($root) | ltrimstr("./")),line=\(.span.line // 1),col=\(.span.column // 1),title=lychee::\(.url): \(.status.text)"' lychee.json
-  rm lychee.json
-  exit $status
-else
-  lychee --no-progress $verbose .
-fi
-'''
+run = "{{vars.check}} lychee"
 
 [tasks."check:versions"]
 description = "Manifest versions agree"
-shell = "bash -euo pipefail -c"
-run = '''
-scripts/set-version --check
-if [ -n "${CHECK_VERBOSE:-}" ]; then
-  echo "Every manifest is at version $(jq -r .version plugins/antithesis/plugin.json)"
-fi
-'''
+run = "{{vars.check}} versions"
 
 [tasks."check:changelog"]
 description = "A new version has changelog notes"
-shell = "bash -euo pipefail -c"
-run = '''
-version=$(jq -r .version plugins/antithesis/plugin.json)
-say() { if [ -n "${CHECK_VERBOSE:-}" ]; then echo "$@"; fi; }
-# Before the first release there is no CHANGELOG.md, and nothing to check.
-if [ ! -f CHANGELOG.md ]; then
-  say "No CHANGELOG.md yet, so there is nothing to check"
-elif gh release view "v$version" > /dev/null 2>&1; then
-  say "v$version is already released"
-else
-  scripts/changelog-section "$version" > /dev/null
-  say "CHANGELOG.md has notes for the unreleased v$version"
-fi
-'''
+run = "{{vars.check}} changelog"
 
 [tasks."check:schema"]
 description = "The Agent Plugins manifest matches its schema (skipped when CHECK_OFFLINE is set)"
-shell = "bash -euo pipefail -c"
-run = '''
-if [ -n "${CHECK_OFFLINE:-}" ]; then
-  echo "Skipped offline: the schema is downloaded. CI validates it."
-  exit 0
-fi
-check-jsonschema ${CHECK_VERBOSE:+-vv} --schemafile https://agent-plugins.org/schemas/1.0.0/plugin.schema.json plugins/antithesis/plugin.json
-'''
+run = "{{vars.check}} schema"
 
 [tasks."check:plugin"]
 description = "Claude Code validates the marketplace and plugin"
 # A task-only tool, so the repo doesn't put a second `claude` on your PATH.
 tools = { claude = "2.1.316" }
+run = "{{vars.check}} plugin"
+
+[tasks."check:ruff"]
+description = "Lint and format-check the Python"
+run = "{{vars.check}} ruff"
+
+[tasks."fix:ruff"]
+description = "Fix Python lint that ruff can fix, and format the Python"
 run = [
-  "claude plugin validate --strict .",
-  "claude plugin validate --strict plugins/antithesis",
+  "uv run --quiet --locked ruff check --fix",
+  "uv run --quiet --locked ruff format",
 ]
+
+[tasks."check:pyright"]
+description = "Type-check the Python"
+run = "{{vars.check}} pyright"

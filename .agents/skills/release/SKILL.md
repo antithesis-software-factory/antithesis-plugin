@@ -42,11 +42,11 @@ Write the notes at the level of modules and what the agent does differently:
 - Put breaking changes first, then the rest, largest first. A change is breaking if something that worked with the previous release now fails or needs the user to act: a renamed module or command, a new requirement on the user's setup, a changed harness layout that existing workloads need to adopt. Start each with `**Breaking**:` and say what to do instead.
 - Link every PR that contributes to an entry, under the repository's URL from `gh repo view --json url -q .url`, e.g. `([#7](https://github.com/antithesishq/antithesis-plugin/pull/7))`.
 
-Put the notes at the top of `CHANGELOG.md`, under `# Version X.Y.Z (YYYY-MM-DD)` with today's date. Create the file if it doesn't exist. Then check that `scripts/changelog-section X.Y.Z` prints them: the release workflow uses the same script.
+Put the notes at the top of `CHANGELOG.md`, under `# Version X.Y.Z (YYYY-MM-DD)` with today's date. Create the file if it doesn't exist. Then check that `scripts/changelog-section.py X.Y.Z` prints them: the release workflow uses the same script.
 
 ## 3. Bump the version
 
-Run `scripts/set-version X.Y.Z`, then `scripts/set-version --check`. This sets the version in every manifest.
+Run `scripts/set-version.py X.Y.Z`, then `scripts/set-version.py --check`. This sets the version in every manifest.
 
 ## 4. Open the PR
 
