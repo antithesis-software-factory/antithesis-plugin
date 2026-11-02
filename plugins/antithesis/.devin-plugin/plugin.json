@@ -1,5 +1,13 @@
 {
   "name": "antithesis",
   "version": "0.1.0",
-  "description": "Antithesis plugin - write tests, triage runs, debug failures, and interact with Antithesis"
+  "displayName": "Antithesis",
+  "description": "Antithesis plugin - write tests, triage runs, debug failures, and interact with Antithesis",
+  "shortDescription": "Antithesis plugin - write tests, triage runs, debug failures, and interact with Antithesis",
+  "author": { "name": "Antithesis", "url": "https://antithesis.com" },
+  "homepage": "https://antithesis.com",
+  "repository": "https://github.com/antithesishq/antithesis-plugin",
+  "license": "Apache-2.0",
+  "logo": "assets/logo.svg",
+  "keywords": ["Development Tools"]
 }
