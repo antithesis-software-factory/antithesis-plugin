@@ -7,16 +7,16 @@ Every service in `docker-compose.yaml` needs an explicit `image:`. snouty reject
 Build the driver into its own image, and add it to `docker-compose.yaml` as a service named `driver`. The driver binary is the container's main process (`references/workload/driver.md`).
 
 ```yaml
-  driver:
-    container_name: driver
-    hostname: driver
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: driver/Dockerfile
-    image: driver:latest
-    environment:
-      KV_URLS: http://kv1:8000,http://kv2:8000
+driver:
+  container_name: driver
+  hostname: driver
+  platform: linux/amd64
+  build:
+    context: .
+    dockerfile: driver/Dockerfile
+  image: driver:latest
+  environment:
+    KV_URLS: http://kv1:8000,http://kv2:8000
 ```
 
 `driver/Dockerfile`:
@@ -54,19 +54,19 @@ Test commands must be executable, which the Dockerfile's `chmod` ensures. `snout
 Add one service per client container (`references/workload/clients.md`), built from the client program:
 
 ```yaml
-  client1:
-    container_name: client1
-    hostname: client1
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: client/Dockerfile
-    image: client:latest
-    restart: on-failure
-    environment:
-      KV_URLS: http://kv1:8000,http://kv2:8000
-      LOG_FORWARD_ADDR: driver:7777
-      OUTCOME_ADDR: driver:7778
+client1:
+  container_name: client1
+  hostname: client1
+  platform: linux/amd64
+  build:
+    context: .
+    dockerfile: client/Dockerfile
+  image: client:latest
+  restart: on-failure
+  environment:
+    KV_URLS: http://kv1:8000,http://kv2:8000
+    LOG_FORWARD_ADDR: driver:7777
+    OUTCOME_ADDR: driver:7778
 ```
 
 `OUTCOME_ADDR` is where the client program sends its completion events. Point the driver at the clients, for example with `CLIENT_URLS: http://client1:8080,http://client2:8080` on the driver. The driver keeps `KV_URLS` for readiness, admin setup and quiet-period reads.
@@ -76,24 +76,25 @@ Add one service per client container (`references/workload/clients.md`), built f
 For out-of-band facts ("Shared volumes for out-of-band facts" in `references/workload/driver.md`), mount one named volume in the node that writes and in the driver:
 
 ```yaml
-  kv1:
-    volumes: [shared:/shared]
-  driver:
-    volumes: [shared:/shared]
+kv1:
+  volumes: [shared:/shared]
+driver:
+  volumes: [shared:/shared]
 volumes:
   shared:
 ```
 
 A new volume takes the ownership of its mount point in the image. If the node runs as a non-root user, create the mount point owned by that user in its Dockerfile, for example `RUN mkdir /shared && chown 999:999 /shared`; otherwise Docker creates it owned by root, and the node can't write there.
 
-## 5. Exclude the driver from faults
+## 5. Pick the faults, and exclude the driver
 
-Launch every run of the workload with the `advanced_test` launcher, following `references/launch/MODULE.md`, and these parameters, which exclude the driver container from faults:
+Launch every run of the workload with the `basic_test` launcher, following `references/launch/MODULE.md`, and these flags:
 
 ```bash
---param 'custom.network_fault_exclusion_patterns=^driver$'
---param custom.container_status_fault_exclusions=driver
---param custom.container_cpu_fault_exclusions=driver
+--fault-tolerance high_availability
+--fault-exclusions '^driver$'
 ```
 
-The container and CPU exclusions take exact container names. The network exclusion is a regex: for several containers use `^a$|^b$`, without parentheses, which a bug breaks. Exclude only the driver: client containers are there to be faulted.
+`--fault-tolerance` picks the fault profile. `high_availability` kills, stops and partitions containers, which the client handling in `references/workload/driver.md` expects. Use `resilient` only for a system that isn't meant to survive losing a node or a partition, such as a single-node system; it pauses containers and degrades the network, but never kills or partitions them.
+
+`--fault-exclusions` is a regex matched against container names, so `^driver$` relies on the driver's `container_name: driver` (section 1); without it, Compose names the container `<project>-driver-1` and the regex matches nothing. Exclude only the driver: client containers are there to be faulted.
