@@ -2,7 +2,7 @@
 
 ## 1. Launch a short run
 
-Launch with the smallest compute budget, `--max-compute-hours 12` on the standard tier. Follow `references/launch/MODULE.md` with the launcher and fault exclusions in `references/workload/harness.md`, and read the run with the triage module.
+Launch with the smallest compute budget, `--max-compute-hours 12` on the standard tier. Follow `references/launch/MODULE.md` with the launcher and fault flags in `references/workload/harness.md`, and read the run with the triage module.
 
 ## 2. Keep setup fast
 
@@ -15,7 +15,7 @@ If a run fails because the driver didn't report setup complete within `--setup-t
 - **Instrumentation.** The instrumentation properties pass ("Checking it" in `references/workload/instrumentation.md`).
 - **The workload starts.** `the workload starts` passes. If it fails, the first command didn't run, or the driver didn't see `/workload-active`. `snouty runs events <run_id> first_start_workload` shows whether the first command ran.
 - **Behavior that needs faults.** Sometimes assertions that need faults are reached, and quiet periods start and recover.
-- **Client failures.** Clients restart and get partitioned, and the driver handles it. The reachable assertion where the driver notices a new boot shows this.
+- **Client failures.** Clients restart and get partitioned (under `high_availability`), and the driver handles it. The reachable assertion where the driver notices a new boot shows this.
 - **Coverage** of code only faults reach, and of services local coverage couldn't measure:
 
   ```bash
