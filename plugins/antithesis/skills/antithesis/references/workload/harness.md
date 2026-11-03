@@ -76,10 +76,10 @@ client1:
 For out-of-band facts ("Shared volumes for out-of-band facts" in `references/workload/driver.md`), mount one named volume in the node that writes and in the driver:
 
 ```yaml
-  kv1:
-    volumes: [shared:/shared]
-  driver:
-    volumes: [shared:/shared]
+kv1:
+  volumes: [shared:/shared]
+driver:
+  volumes: [shared:/shared]
 volumes:
   shared:
 ```
